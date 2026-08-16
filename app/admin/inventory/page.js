@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Image from "next/image";
+import Link from "next/link";
 
 export default function AdminInventoryPage() {
   const [products, setProducts] = useState([]);
@@ -118,52 +119,63 @@ export default function AdminInventoryPage() {
             ) : filtered.length === 0 ? (
               <tr><td colSpan={5} className="px-4 py-8 text-center text-muted">No products found.</td></tr>
             ) : (
-              filtered.map((p) => (
-                <tr key={p._id} className="border-b border-gold/10 last:border-0">
-                  <td className="flex items-center gap-3 px-4 py-3">
-                    <div className="h-10 w-10 overflow-hidden rounded-lg bg-champagne">
-                      {p.images?.[0]?.url && (
-                        <Image src={p.images[0].url} alt="" width={40} height={40} className="h-full w-full object-cover" />
-                      )}
-                    </div>
-                    <span className="font-medium text-ink">{p.name}</span>
-                  </td>
-                  <td className="px-4 py-3 text-ink/70">{p.category?.name}</td>
-                  <td className="px-4 py-3">
-                    <span
-                      className={
-                        p.stock <= 0
-                          ? "font-semibold text-terracotta"
-                          : p.stock <= p.lowStockThreshold
-                          ? "font-semibold text-gold-dark"
-                          : "text-ink/70"
-                      }
-                    >
-                      {p.stock}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-ink/70">{p.lowStockThreshold}</td>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="number"
-                        min="0"
-                        placeholder={String(p.stock)}
-                        value={editValues[p._id] ?? ""}
-                        onChange={(e) => setEditValues((prev) => ({ ...prev, [p._id]: e.target.value }))}
-                        className="w-20 rounded-lg border border-gold/30 px-2 py-1.5 text-sm outline-none focus:border-forest"
-                      />
-                      <button
-                        onClick={() => saveStock(p._id)}
-                        disabled={savingId === p._id || editValues[p._id] === undefined}
-                        className="rounded-full bg-forest px-4 py-1.5 text-xs font-semibold text-ivory hover:bg-forest-light disabled:opacity-40"
+              filtered.map((p) => {
+                const image = p.media?.find((m) => m.type === "image")?.url || p.images?.[0]?.url;
+                return (
+                  <tr key={p._id} className="border-b border-gold/10 last:border-0">
+                    <td className="px-4 py-3">
+                      <Link href={`/products/${p.slug}`} className="flex items-center gap-3 group w-fit">
+                        <div className="h-10 w-10 shrink-0 overflow-hidden rounded-lg bg-champagne">
+                          {image ? (
+                            <Image src={image} alt="" width={40} height={40} className="h-full w-full object-cover" />
+                          ) : (
+                            <div className="flex h-full w-full items-center justify-center text-[9px] text-muted">
+                              No image
+                            </div>
+                          )}
+                        </div>
+                        <span className="font-medium text-ink group-hover:text-forest group-hover:underline">
+                          {p.name}
+                        </span>
+                      </Link>
+                    </td>
+                    <td className="px-4 py-3 text-ink/70">{p.category?.name}</td>
+                    <td className="px-4 py-3">
+                      <span
+                        className={
+                          p.stock <= 0
+                            ? "font-semibold text-terracotta"
+                            : p.stock <= p.lowStockThreshold
+                            ? "font-semibold text-gold-dark"
+                            : "text-ink/70"
+                        }
                       >
-                        {savingId === p._id ? "..." : "Save"}
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))
+                        {p.stock}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-ink/70">{p.lowStockThreshold}</td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="number"
+                          min="0"
+                          placeholder={String(p.stock)}
+                          value={editValues[p._id] ?? ""}
+                          onChange={(e) => setEditValues((prev) => ({ ...prev, [p._id]: e.target.value }))}
+                          className="w-20 rounded-lg border border-gold/30 px-2 py-1.5 text-sm outline-none focus:border-forest"
+                        />
+                        <button
+                          onClick={() => saveStock(p._id)}
+                          disabled={savingId === p._id || editValues[p._id] === undefined}
+                          className="rounded-full bg-forest px-4 py-1.5 text-xs font-semibold text-ivory hover:bg-forest-light disabled:opacity-40"
+                        >
+                          {savingId === p._id ? "..." : "Save"}
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })
             )}
           </tbody>
         </table>
