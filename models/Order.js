@@ -24,6 +24,31 @@ const TrackingSchema = new mongoose.Schema(
   { _id: false }
 );
 
+const CancellationSchema = new mongoose.Schema(
+  {
+    reason: { type: String, default: "" },
+    cancelledAt: { type: Date, default: null },
+    cancelledBy: { type: String, default: "admin" },
+  },
+  { _id: false }
+);
+
+const RefundSchema = new mongoose.Schema(
+  {
+    amount: { type: Number, default: 0 },
+    status: {
+      type: String,
+      enum: ["none", "pending", "refunded", "failed"],
+      default: "none",
+    },
+    method: { type: String, default: "" },
+    note: { type: String, default: "" },
+    razorpayRefundId: { type: String, default: "" },
+    refundedAt: { type: Date, default: null },
+  },
+  { _id: false }
+);
+
 const OrderSchema = new mongoose.Schema(
   {
     orderNumber: { type: String, required: true, unique: true },
@@ -71,6 +96,8 @@ const OrderSchema = new mongoose.Schema(
       default: [],
     },
     tracking: { type: TrackingSchema, default: () => ({}) },
+    cancellation: { type: CancellationSchema, default: () => ({}) },
+    refund: { type: RefundSchema, default: () => ({}) },
     notes: { type: String, default: "" },
   },
   { timestamps: true }

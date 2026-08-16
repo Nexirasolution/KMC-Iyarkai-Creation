@@ -142,7 +142,56 @@ export default function TrackOrderPage() {
                     })}
                   </div>
                 ) : (
-                  <p className="mt-4 text-sm text-terracotta">This order was cancelled.</p>
+                  <div className="mt-4 rounded-xl2 border border-terracotta/20 bg-terracotta/5 p-4">
+                    <p className="text-sm font-semibold text-terracotta">This order was cancelled.</p>
+                    {order.cancellation?.reason && (
+                      <p className="mt-1 text-sm text-ink/70">
+                        <span className="font-medium text-ink">Reason:</span> {order.cancellation.reason}
+                      </p>
+                    )}
+                    {order.cancellation?.cancelledAt && (
+                      <p className="mt-1 text-xs text-muted">
+                        Cancelled on{" "}
+                        {new Date(order.cancellation.cancelledAt).toLocaleDateString("en-IN", {
+                          day: "numeric",
+                          month: "short",
+                          year: "numeric",
+                        })}
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                {order.refund?.status === "refunded" && (
+                  <>
+                    <div className="leaf-divider my-5" />
+                    <div className="rounded-xl2 border border-forest/20 bg-forest/5 p-4">
+                      <p className="text-xs font-semibold uppercase text-forest">Refund</p>
+                      <p className="mt-1 text-sm font-semibold text-forest">
+                        ₹{order.refund.amount} refund initiated
+                      </p>
+                      {order.refund.method && (
+                        <p className="mt-1 text-sm text-ink/70">
+                          <span className="font-medium text-ink">Method:</span> {order.refund.method}
+                        </p>
+                      )}
+                      {order.refund.refundedAt && (
+                        <p className="mt-1 text-xs text-muted">
+                          Initiated on{" "}
+                          {new Date(order.refund.refundedAt).toLocaleDateString("en-IN", {
+                            day: "numeric",
+                            month: "short",
+                            year: "numeric",
+                          })}
+                        </p>
+                      )}
+                      {order.refund.method === "Razorpay" && (
+                        <p className="mt-2 text-xs text-muted">
+                          Refunds to your original payment method usually reflect within 5–7 business days.
+                        </p>
+                      )}
+                    </div>
+                  </>
                 )}
 
                 {(order.tracking?.courier || order.tracking?.trackingNumber) && (

@@ -64,7 +64,7 @@ export async function POST(req) {
       validatedItems.push({
         product: product._id,
         name: product.name,
-        image: product.images?.[0]?.url || "",
+        image: product.media?.[0]?.url || product.images?.[0]?.url || "",
         price: product.price,
         quantity: item.quantity,
         unit: product.unit,

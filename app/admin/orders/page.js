@@ -17,7 +17,6 @@ const STATUS_COLORS = {
 
 const EMPTY_TRACKING = { courier: "", trackingNumber: "", trackingUrl: "" };
 
-// --- Simple toast notification ---
 function Toast({ toast, onClose }) {
   useEffect(() => {
     if (!toast) return;
@@ -52,9 +51,16 @@ export default function AdminOrdersPage() {
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState(null);
   const [updating, setUpdating] = useState(false);
-  const [zoomImage, setZoomImage] = useState(null); // { src, alt } | null
+  const [zoomImage, setZoomImage] = useState(null);
   const [tracking, setTracking] = useState(EMPTY_TRACKING);
-  const [toast, setToast] = useState(null); // { message, type } | null
+  const [toast, setToast] = useState(null);
+
+  const [showCancelForm, setShowCancelForm] = useState(false);
+  const [cancelReason, setCancelReason] = useState("");
+
+  const [refundAmount, setRefundAmount] = useState("");
+  const [refundMethod, setRefundMethod] = useState("");
+  const [refundNote, setRefundNote] = useState("");
 
   const showToast = useCallback((message, type = "success") => {
     setToast({ message, type });
@@ -74,7 +80,6 @@ export default function AdminOrdersPage() {
     loadOrders();
   }, [filter]);
 
-  // Sync the tracking form whenever a different order is opened
   useEffect(() => {
     if (selected) {
       setTracking({
@@ -82,17 +87,25 @@ export default function AdminOrdersPage() {
         trackingNumber: selected.tracking?.trackingNumber || "",
         trackingUrl: selected.tracking?.trackingUrl || "",
       });
+      setRefundAmount(selected.refund?.amount ? String(selected.refund.amount) : String(selected.total || ""));
+      setRefundMethod(selected.refund?.method || "");
+      setRefundNote(selected.refund?.note || "");
     } else {
       setTracking(EMPTY_TRACKING);
+      setRefundAmount("");
+      setRefundMethod("");
+      setRefundNote("");
     }
+    setShowCancelForm(false);
+    setCancelReason("");
   }, [selected]);
 
-  async function updateStatus(id, status) {
+  async function updateStatus(id, status, extra = {}) {
     setUpdating(true);
     const res = await fetch(`/api/orders/${id}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status }),
+      body: JSON.stringify({ status, ...extra }),
     });
     const data = await res.json();
     setUpdating(false);
@@ -100,8 +113,33 @@ export default function AdminOrdersPage() {
       setSelected(data.order);
       loadOrders();
       showToast(`Status updated to "${status}"`);
+      return true;
     } else {
       showToast(data.error || "Failed to update status", "error");
+      return false;
+    }
+  }
+
+  function handleStatusClick(status) {
+    if (!selected || selected.status === status) return;
+    if (status === "cancelled") {
+      setShowCancelForm(true);
+      return;
+    }
+    updateStatus(selected._id, status);
+  }
+
+  async function confirmCancel() {
+    if (!cancelReason.trim()) {
+      showToast("Please enter a cancellation reason", "error");
+      return;
+    }
+    const ok = await updateStatus(selected._id, "cancelled", {
+      cancellation: { reason: cancelReason.trim() },
+    });
+    if (ok) {
+      setShowCancelForm(false);
+      setCancelReason("");
     }
   }
 
@@ -124,12 +162,47 @@ export default function AdminOrdersPage() {
     }
   }
 
+  async function saveRefund() {
+    if (!selected) return;
+    const amount = Number(refundAmount);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      showToast("Enter a valid refund amount", "error");
+      return;
+    }
+    setUpdating(true);
+    const res = await fetch(`/api/orders/${selected._id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        refund: { amount, method: refundMethod, note: refundNote },
+      }),
+    });
+    const data = await res.json();
+    setUpdating(false);
+    if (res.ok) {
+      setSelected(data.order);
+      loadOrders();
+      showToast(
+        data.order.refund?.method === "Razorpay"
+          ? `₹${amount} refunded via Razorpay`
+          : `₹${amount} marked as refunded`
+      );
+    } else {
+      showToast(data.error || "Failed to process refund", "error");
+    }
+  }
+
   const filtered = orders.filter(
     (o) =>
       o.orderNumber.toLowerCase().includes(search.toLowerCase()) ||
       o.customer.phone.includes(search) ||
       o.customer.name.toLowerCase().includes(search.toLowerCase())
   );
+
+  const isOnlinePaid =
+    selected?.paymentMethod === "Online" &&
+    selected?.paymentStatus === "paid" &&
+    !!selected?.razorpay?.paymentId;
 
   return (
     <div>
@@ -167,7 +240,7 @@ export default function AdminOrdersPage() {
         ))}
       </div>
 
-      {/* Desktop table (hidden on mobile) */}
+      {/* Desktop table */}
       <div className="mt-6 hidden overflow-x-auto rounded-xl2 border border-gold/15 bg-white shadow-card md:block">
         <table className="w-full text-left text-sm">
           <thead className="border-b border-gold/15 bg-champagne/50 text-xs uppercase tracking-wide text-muted">
@@ -221,7 +294,7 @@ export default function AdminOrdersPage() {
         </table>
       </div>
 
-      {/* Mobile card list (hidden on desktop) */}
+      {/* Mobile card list */}
       <div className="mt-6 space-y-3 md:hidden">
         {loading ? (
           <p className="py-8 text-center text-sm text-muted">Loading...</p>
@@ -338,7 +411,7 @@ export default function AdminOrdersPage() {
                 <button
                   key={s}
                   disabled={updating || selected.status === s}
-                  onClick={() => updateStatus(selected._id, s)}
+                  onClick={() => handleStatusClick(s)}
                   className={`rounded-full border px-4 py-2 text-xs font-semibold capitalize transition disabled:cursor-default sm:py-1.5 ${
                     selected.status === s ? "border-forest bg-forest text-ivory" : "border-gold/30 text-ink/70 hover:bg-champagne"
                   }`}
@@ -347,6 +420,156 @@ export default function AdminOrdersPage() {
                 </button>
               ))}
             </div>
+
+            {showCancelForm && (
+              <div className="mt-3 rounded-xl2 border border-terracotta/30 bg-terracotta/5 p-4">
+                <label className="text-xs font-semibold text-terracotta">
+                  Reason for cancellation (shown to customer)
+                </label>
+                <textarea
+                  rows={2}
+                  value={cancelReason}
+                  onChange={(e) => setCancelReason(e.target.value)}
+                  placeholder="e.g. Item out of stock, customer requested cancellation..."
+                  className="mt-2 w-full rounded-xl2 border border-gold/30 bg-white px-4 py-2 text-sm outline-none focus:border-terracotta"
+                />
+                <div className="mt-3 flex gap-2">
+                  <button
+                    onClick={confirmCancel}
+                    disabled={updating}
+                    className="rounded-full bg-terracotta px-5 py-2 text-xs font-semibold text-ivory disabled:opacity-60"
+                  >
+                    {updating ? "Cancelling..." : "Confirm cancellation"}
+                  </button>
+                  <button
+                    onClick={() => {
+                      setShowCancelForm(false);
+                      setCancelReason("");
+                    }}
+                    className="rounded-full border border-gold/30 px-5 py-2 text-xs font-semibold text-ink/70"
+                  >
+                    Back
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {selected.status === "cancelled" && selected.cancellation?.reason && (
+              <div className="mt-3 rounded-xl2 border border-terracotta/20 bg-terracotta/5 p-4">
+                <p className="text-xs font-semibold uppercase text-terracotta">Cancellation Reason</p>
+                <p className="mt-1 text-sm text-ink/80">{selected.cancellation.reason}</p>
+                {selected.cancellation.cancelledAt && (
+                  <p className="mt-1 text-xs text-muted">
+                    Cancelled on{" "}
+                    {new Date(selected.cancellation.cancelledAt).toLocaleDateString("en-IN", {
+                      day: "numeric",
+                      month: "short",
+                      year: "numeric",
+                    })}
+                  </p>
+                )}
+              </div>
+            )}
+
+            {selected.status === "cancelled" && (
+              <>
+                <div className="leaf-divider my-5" />
+                <p className="text-xs font-semibold uppercase text-muted">Refund</p>
+
+                {selected.refund?.status === "refunded" ? (
+                  <div className="mt-2 rounded-xl2 border border-forest/20 bg-forest/5 p-4">
+                    <p className="text-sm font-semibold text-forest">
+                      ₹{selected.refund.amount} refunded
+                    </p>
+                    {selected.refund.method && (
+                      <p className="mt-1 text-xs text-ink/70">Method: {selected.refund.method}</p>
+                    )}
+                    {selected.refund.razorpayRefundId && (
+                      <p className="mt-1 text-xs text-ink/70">
+                        Razorpay Refund ID: {selected.refund.razorpayRefundId}
+                      </p>
+                    )}
+                    {selected.refund.note && (
+                      <p className="mt-1 text-xs text-ink/70">{selected.refund.note}</p>
+                    )}
+                    {selected.refund.refundedAt && (
+                      <p className="mt-1 text-xs text-muted">
+                        Refunded on{" "}
+                        {new Date(selected.refund.refundedAt).toLocaleDateString("en-IN", {
+                          day: "numeric",
+                          month: "short",
+                          year: "numeric",
+                        })}
+                      </p>
+                    )}
+                  </div>
+                ) : (
+                  <div className="mt-2">
+                    {selected.refund?.status === "failed" && (
+                      <div className="mb-3 rounded-xl2 border border-terracotta/30 bg-terracotta/5 p-4">
+                        <p className="text-sm font-semibold text-terracotta">Previous refund attempt failed</p>
+                        <p className="mt-1 text-xs text-ink/70">{selected.refund.note}</p>
+                        <p className="mt-2 text-xs text-muted">Check your Razorpay dashboard, then try again below.</p>
+                      </div>
+                    )}
+
+                    {isOnlinePaid && (
+                      <p className="mb-2 text-xs text-gold-dark">
+                        This order was paid online — clicking below will trigger a real refund through Razorpay.
+                      </p>
+                    )}
+
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <div>
+                        <label className="text-xs font-medium text-ink/70">Refund amount (₹)</label>
+                        <input
+                          type="number"
+                          min="0"
+                          max={selected.total}
+                          value={refundAmount}
+                          onChange={(e) => setRefundAmount(e.target.value)}
+                          className="mt-1 w-full rounded-full border border-gold/30 bg-white px-4 py-2 text-sm outline-none focus:border-forest"
+                        />
+                      </div>
+
+                      {!isOnlinePaid && (
+                        <div>
+                          <label className="text-xs font-medium text-ink/70">Refund method (optional)</label>
+                          <input
+                            type="text"
+                            placeholder="e.g. UPI, Bank transfer"
+                            value={refundMethod}
+                            onChange={(e) => setRefundMethod(e.target.value)}
+                            className="mt-1 w-full rounded-full border border-gold/30 bg-white px-4 py-2 text-sm outline-none focus:border-forest"
+                          />
+                        </div>
+                      )}
+
+                      <div className="sm:col-span-2">
+                        <label className="text-xs font-medium text-ink/70">Note (optional)</label>
+                        <input
+                          type="text"
+                          placeholder="Internal note, not shown to customer"
+                          value={refundNote}
+                          onChange={(e) => setRefundNote(e.target.value)}
+                          className="mt-1 w-full rounded-full border border-gold/30 bg-white px-4 py-2 text-sm outline-none focus:border-forest"
+                        />
+                      </div>
+
+                      <div className="sm:col-span-2">
+                        <button
+                          onClick={saveRefund}
+                          disabled={updating}
+                          className="rounded-full bg-forest px-5 py-2 text-xs font-semibold text-ivory shadow-card disabled:opacity-60"
+                        >
+                          {updating ? "Processing..." : "Process refund"}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
 
             <div className="leaf-divider my-5" />
 
@@ -399,7 +622,6 @@ export default function AdminOrdersPage() {
         )}
       </Modal>
 
-      {/* Image zoom lightbox */}
       {zoomImage && (
         <div
           className="fixed inset-0 z-[60] flex items-center justify-center bg-ink/80 p-4"
