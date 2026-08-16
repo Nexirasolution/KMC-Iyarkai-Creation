@@ -17,6 +17,15 @@ const STATUS_COLORS = {
 
 const EMPTY_TRACKING = { courier: "", trackingNumber: "", trackingUrl: "" };
 
+// Builds a wa.me link from a phone number. Assumes bare 10-digit numbers
+// are Indian mobile numbers missing the country code — adjust if your
+// stored phone format differs (e.g. already includes +91).
+function toWhatsAppLink(phone) {
+  const digits = (phone || "").replace(/\D/g, "");
+  const number = digits.length === 10 ? `91${digits}` : digits;
+  return `https://wa.me/${number}`;
+}
+
 function Toast({ toast, onClose }) {
   useEffect(() => {
     if (!toast) return;
@@ -264,7 +273,17 @@ export default function AdminOrdersPage() {
                 <tr key={o._id} className="border-b border-gold/10 last:border-0">
                   <td className="px-4 py-3 font-semibold text-ink">{o.orderNumber}</td>
                   <td className="px-4 py-3 text-ink/70">{o.customer.name}</td>
-                  <td className="px-4 py-3 text-ink/70">{o.customer.phone}</td>
+                  <td className="px-4 py-3 text-ink/70">
+                    <a
+                      href={toWhatsAppLink(o.customer.phone)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={(e) => e.stopPropagation()}
+                      className="hover:text-forest hover:underline"
+                    >
+                      {o.customer.phone}
+                    </a>
+                  </td>
                   <td className="px-4 py-3 text-ink/70">₹{o.total}</td>
                   <td className="px-4 py-3">
                     <span className={`rounded-full px-3 py-1 text-xs font-medium capitalize ${STATUS_COLORS[o.status]}`}>
@@ -303,12 +322,28 @@ export default function AdminOrdersPage() {
         ) : (
           filtered.map((o) => (
             <div key={o._id} className="rounded-2xl border border-gold/15 bg-white p-4 shadow-card">
-              <button onClick={() => setSelected(o)} className="block w-full text-left">
+              <div
+                onClick={() => setSelected(o)}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") setSelected(o);
+                }}
+                className="block w-full cursor-pointer text-left"
+              >
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <p className="font-semibold text-ink truncate">{o.orderNumber}</p>
                     <p className="mt-0.5 text-sm text-ink/70 truncate">{o.customer.name}</p>
-                    <p className="text-xs text-muted">{o.customer.phone}</p>
+                    <a
+                      href={toWhatsAppLink(o.customer.phone)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={(e) => e.stopPropagation()}
+                      className="text-xs text-muted hover:text-forest hover:underline"
+                    >
+                      {o.customer.phone}
+                    </a>
                   </div>
                   <span
                     className={`shrink-0 rounded-full px-3 py-1 text-xs font-medium capitalize ${STATUS_COLORS[o.status]}`}
@@ -323,7 +358,7 @@ export default function AdminOrdersPage() {
                   </span>
                   <span className="font-semibold text-forest">₹{o.total}</span>
                 </div>
-              </button>
+              </div>
 
               <Link
                 href={`/admin/orders/${o._id}/label`}
@@ -343,7 +378,14 @@ export default function AdminOrdersPage() {
               <div>
                 <p className="text-xs font-semibold uppercase text-muted">Customer</p>
                 <p className="mt-1 text-sm text-ink">{selected.customer.name}</p>
-                <p className="text-sm text-ink/70">{selected.customer.phone}</p>
+                <a
+                  href={toWhatsAppLink(selected.customer.phone)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-sm text-ink/70 hover:text-forest hover:underline"
+                >
+                  {selected.customer.phone}
+                </a>
                 {selected.customer.email && <p className="text-sm text-ink/70 break-all">{selected.customer.email}</p>}
               </div>
               <div>
