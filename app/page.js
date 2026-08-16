@@ -17,7 +17,7 @@ async function getData() {
   const categories = await Category.find({ isActive: true }).sort({ sortOrder: 1 }).lean();
   const bestSelling = await Product.find({ isActive: true, isFeatured: true })
     .populate("category", "name slug")
-    .limit(8)
+    .sort({ createdAt: -1 })
     .lean();
   return {
     categories: JSON.parse(JSON.stringify(categories)),

@@ -5,6 +5,10 @@ const nextConfig = {
       bodySizeLimit: "100mb",
     },
     middlewareClientMaxBodySize: "100mb",
+    staleTimes: {
+      dynamic: 0,
+      static: 180,
+    },
   },
 
   images: {
