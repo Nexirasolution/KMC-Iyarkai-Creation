@@ -20,7 +20,6 @@ export default function CheckoutPage() {
     state: "Tamil Nadu",
     pincode: "",
   });
-  const [paymentMethod, setPaymentMethod] = useState("COD");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [placedOrder, setPlacedOrder] = useState(null);
@@ -68,36 +67,7 @@ export default function CheckoutPage() {
     return true;
   }
 
-  async function handleCOD(e) {
-    e.preventDefault();
-    setError("");
-    if (!validate()) return;
-
-    setLoading(true);
-    try {
-      const res = await fetch("/api/orders", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          customer: form,
-          items,
-          paymentMethod: "COD",
-          shippingFee,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Failed to place order.");
-
-      setPlacedOrder(data.order);
-      clearCart();
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function handleRazorpay(e) {
+  async function handleSubmit(e) {
     e.preventDefault();
     setError("");
     if (!validate()) return;
@@ -173,14 +143,6 @@ export default function CheckoutPage() {
     } catch (err) {
       setError(err.message);
       setLoading(false);
-    }
-  }
-
-  function handleSubmit(e) {
-    if (paymentMethod === "COD") {
-      handleCOD(e);
-    } else {
-      handleRazorpay(e);
     }
   }
 
@@ -262,27 +224,9 @@ export default function CheckoutPage() {
 
               <div>
                 <p className="mb-2 text-sm font-semibold text-ink">Payment Method</p>
-                <div className="flex gap-3">
-                  {["Online"].map((m) => (
-                    <button
-                      type="button"
-                      key={m}
-                      onClick={() => setPaymentMethod(m)}
-                      className={`rounded-full border px-5 py-2 text-xs font-semibold transition ${
-                        paymentMethod === m
-                          ? "border-forest bg-forest text-ivory"
-                          : "border-gold/30 text-ink/70 hover:bg-champagne"
-                      }`}
-                    >
-                      {m === "COD" ? "Cash on Delivery" : m}
-                    </button>
-                  ))}
-                </div>
-                {paymentMethod !== "COD" && (
-                  <p className="mt-2 text-xs text-muted">
-                    You'll be redirected to Razorpay's secure checkout to complete payment.
-                  </p>
-                )}
+                <p className="text-xs text-muted">
+                  You'll be redirected to Razorpay's secure checkout to complete payment.
+                </p>
               </div>
 
               {error && <p className="text-sm text-terracotta">{error}</p>}
@@ -316,7 +260,7 @@ export default function CheckoutPage() {
                 disabled={loading}
                 className="mt-6 w-full rounded-full bg-forest px-8 py-3.5 text-sm font-semibold text-ivory shadow-soft transition hover:bg-forest-light disabled:opacity-60"
               >
-                {loading ? "Processing..." : paymentMethod === "COD" ? "Place Order" : "Pay & Place Order"}
+                {loading ? "Processing..." : "Pay & Place Order"}
               </button>
             </div>
           </form>
