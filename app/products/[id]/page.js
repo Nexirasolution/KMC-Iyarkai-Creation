@@ -10,6 +10,7 @@ import { LeafIcon } from "@/components/Icons";
 import ProductGallery from "@/components/ProductGallery";
 import ProductAccordion from "@/components/ProductAccordion";
 import RelatedProducts from "@/components/RelatedProducts";
+import BackButton from "@/components/BackButton";
 import { getSettings } from "@/lib/settings";
 
 export const dynamic = "force-dynamic";
@@ -70,6 +71,8 @@ export default async function ProductDetailPage({ params }) {
     <>
       <Navbar settings={settings} />
       <section className="mx-auto max-w-6xl px-5 py-12 md:px-8">
+        <BackButton fallbackHref="/products" />
+
         {/* Image + core info side by side */}
         <div className="grid gap-12 md:grid-cols-2">
           {media.length > 0 ? (

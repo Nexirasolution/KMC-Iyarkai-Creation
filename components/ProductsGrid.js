@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import ProductCard from "./ProductCard";
 import { CATEGORY_ICONS, LeafIcon } from "./Icons";
 
@@ -15,10 +16,16 @@ const SORT_OPTIONS = [
 const PAGE_SIZE = 12;
 
 export default function ProductsGrid({ initialCategory, initialSearch }) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+
+  // Category now comes straight from the URL, so back/forward always reflects it correctly
+  const activeCategory = searchParams.get("category") || "";
+
   const [categories, setCategories] = useState([]);
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [activeCategory, setActiveCategory] = useState(initialCategory || "");
   const [search, setSearch] = useState(initialSearch || "");
   const [sortBy, setSortBy] = useState("");
   const [minPrice, setMinPrice] = useState("");
@@ -60,8 +67,18 @@ export default function ProductsGrid({ initialCategory, initialSearch }) {
       .finally(() => setLoading(false));
   }, [activeCategory, search, sortBy, minPrice, maxPrice, page]);
 
+  function setCategoryInUrl(categoryId) {
+    const params = new URLSearchParams(searchParams.toString());
+    if (categoryId) {
+      params.set("category", categoryId);
+    } else {
+      params.delete("category");
+    }
+    router.push(`${pathname}?${params.toString()}`, { scroll: false });
+  }
+
   function clearFilters() {
-    setActiveCategory("");
+    setCategoryInUrl("");
     setSearch("");
     setSortBy("");
     setMinPrice("");
@@ -95,7 +112,7 @@ export default function ProductsGrid({ initialCategory, initialSearch }) {
       <div className="mb-4 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div className="flex flex-wrap gap-2">
           <button
-            onClick={() => setActiveCategory("")}
+            onClick={() => setCategoryInUrl("")}
             className={`rounded-full border px-4 py-2 text-xs font-semibold transition ${
               activeCategory === ""
                 ? "border-forest bg-forest text-ivory"
@@ -109,7 +126,7 @@ export default function ProductsGrid({ initialCategory, initialSearch }) {
             return (
               <button
                 key={cat._id}
-                onClick={() => setActiveCategory(cat._id)}
+                onClick={() => setCategoryInUrl(cat._id)}
                 className={`flex items-center gap-1.5 rounded-full border px-4 py-2 text-xs font-semibold transition ${
                   activeCategory === cat._id
                     ? "border-forest bg-forest text-ivory"
