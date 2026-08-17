@@ -79,10 +79,14 @@ export default function CheckoutPage() {
 
     setLoading(true);
     try {
+      // Send customer + cart + shippingFee up front so the server can save
+      // a PendingOrder against the Razorpay order id. That's what lets the
+      // order still get created via the webhook even if this tab closes
+      // before the payment success handler below ever runs.
       const orderRes = await fetch("/api/razorpay/create-order", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ amount: total }),
+        body: JSON.stringify({ amount: total, customer: form, items, shippingFee }),
       });
       const orderData = await orderRes.json();
       if (!orderRes.ok) throw new Error(orderData.error || "Failed to start payment.");
@@ -103,6 +107,10 @@ export default function CheckoutPage() {
         },
         theme: { color: "#1f3d2b" }, // forest color
         handler: async function (response) {
+          // Fast path: if the browser is still here, verify + create the
+          // order immediately for a snappy confirmation screen. If this
+          // never fires (tab closed, app killed, etc.), the Razorpay
+          // webhook creates the exact same order server-side instead.
           try {
             const verifyRes = await fetch("/api/razorpay/verify", {
               method: "POST",
@@ -111,9 +119,6 @@ export default function CheckoutPage() {
                 razorpay_order_id: response.razorpay_order_id,
                 razorpay_payment_id: response.razorpay_payment_id,
                 razorpay_signature: response.razorpay_signature,
-                customer: form,
-                items,
-                shippingFee,
               }),
             });
             const verifyData = await verifyRes.json();
@@ -165,14 +170,15 @@ export default function CheckoutPage() {
             Save this number, or use your phone number, to track your order anytime.
           </p>
           <div className="mt-8 flex justify-center gap-4">
-            
-            <a  href="/track-order"
+            <a
+              href="/track-order"
               className="rounded-full border border-forest/30 px-8 py-3 text-sm font-semibold text-forest hover:bg-champagne"
             >
               Track Order
             </a>
-            
-             <a href="/products"
+
+            <a
+              href="/products"
               className="rounded-full bg-forest px-8 py-3 text-sm font-semibold text-ivory shadow-soft hover:bg-forest-light"
             >
               Continue Shopping
