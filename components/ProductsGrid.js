@@ -20,8 +20,10 @@ export default function ProductsGrid({ initialCategory, initialSearch }) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
-  // Category now comes straight from the URL, so back/forward always reflects it correctly
+  // Category AND page now come straight from the URL, so back/forward always
+  // reflects both correctly.
   const activeCategory = searchParams.get("category") || "";
+  const page = Number(searchParams.get("page")) || 1;
 
   const [categories, setCategories] = useState([]);
   const [products, setProducts] = useState([]);
@@ -31,7 +33,6 @@ export default function ProductsGrid({ initialCategory, initialSearch }) {
   const [minPrice, setMinPrice] = useState("");
   const [maxPrice, setMaxPrice] = useState("");
   const [showFilters, setShowFilters] = useState(false);
-  const [page, setPage] = useState(1);
   const [pagination, setPagination] = useState(null);
 
   useEffect(() => {
@@ -40,9 +41,14 @@ export default function ProductsGrid({ initialCategory, initialSearch }) {
       .then((d) => setCategories(d.categories || []));
   }, []);
 
-  // Any filter change should jump back to page 1
+  // Any FILTER change should jump back to page 1. Note `page` is deliberately
+  // NOT in this dependency list — otherwise paging back/forward would
+  // re-trigger this effect and force you back to page 1 every time.
   useEffect(() => {
-    setPage(1);
+    if (page !== 1) {
+      setPageInUrl(1);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeCategory, search, sortBy, minPrice, maxPrice]);
 
   useEffect(() => {
@@ -74,6 +80,17 @@ export default function ProductsGrid({ initialCategory, initialSearch }) {
     } else {
       params.delete("category");
     }
+    params.delete("page"); // switching category always restarts at page 1
+    router.push(`${pathname}?${params.toString()}`, { scroll: false });
+  }
+
+  function setPageInUrl(p) {
+    const params = new URLSearchParams(searchParams.toString());
+    if (p > 1) {
+      params.set("page", String(p));
+    } else {
+      params.delete("page");
+    }
     router.push(`${pathname}?${params.toString()}`, { scroll: false });
   }
 
@@ -87,7 +104,7 @@ export default function ProductsGrid({ initialCategory, initialSearch }) {
 
   function goToPage(p) {
     if (p < 1 || (pagination && p > pagination.totalPages)) return;
-    setPage(p);
+    setPageInUrl(p);
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
