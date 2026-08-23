@@ -5,6 +5,7 @@ import Link from "next/link";
 import Modal from "@/components/Modal";
 
 const STATUSES = ["pending", "confirmed", "packed", "shipped", "delivered", "cancelled"];
+const PAYMENT_STATUSES = ["pending", "paid", "failed"];
 
 const STATUS_COLORS = {
   pending: "bg-gold/20 text-gold-dark",
@@ -13,6 +14,12 @@ const STATUS_COLORS = {
   shipped: "bg-terracotta/10 text-terracotta",
   delivered: "bg-forest text-ivory",
   cancelled: "bg-muted/10 text-muted",
+};
+
+const PAYMENT_STATUS_COLORS = {
+  pending: "bg-gold/20 text-gold-dark",
+  paid: "bg-forest/10 text-forest",
+  failed: "bg-terracotta/10 text-terracotta",
 };
 
 const EMPTY_TRACKING = { courier: "", trackingNumber: "", trackingUrl: "" };
@@ -71,6 +78,9 @@ export default function AdminOrdersPage() {
   const [refundMethod, setRefundMethod] = useState("");
   const [refundNote, setRefundNote] = useState("");
 
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
   const showToast = useCallback((message, type = "success") => {
     setToast({ message, type });
   }, []);
@@ -107,6 +117,7 @@ export default function AdminOrdersPage() {
     }
     setShowCancelForm(false);
     setCancelReason("");
+    setShowDeleteConfirm(false);
   }, [selected]);
 
   async function updateStatus(id, status, extra = {}) {
@@ -136,6 +147,25 @@ export default function AdminOrdersPage() {
       return;
     }
     updateStatus(selected._id, status);
+  }
+
+  async function handlePaymentStatusClick(paymentStatus) {
+    if (!selected || selected.paymentStatus === paymentStatus) return;
+    setUpdating(true);
+    const res = await fetch(`/api/orders/${selected._id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ paymentStatus }),
+    });
+    const data = await res.json();
+    setUpdating(false);
+    if (res.ok) {
+      setSelected(data.order);
+      loadOrders();
+      showToast(`Payment status updated to "${paymentStatus}"`);
+    } else {
+      showToast(data.error || "Failed to update payment status", "error");
+    }
   }
 
   async function confirmCancel() {
@@ -201,6 +231,22 @@ export default function AdminOrdersPage() {
     }
   }
 
+  async function deleteOrder() {
+    if (!selected) return;
+    setDeleting(true);
+    const res = await fetch(`/api/orders/${selected._id}`, { method: "DELETE" });
+    const data = await res.json().catch(() => ({}));
+    setDeleting(false);
+    if (res.ok) {
+      showToast(`Order ${selected.orderNumber} deleted`);
+      setShowDeleteConfirm(false);
+      setSelected(null);
+      loadOrders();
+    } else {
+      showToast(data.error || "Failed to delete order", "error");
+    }
+  }
+
   const filtered = orders.filter(
     (o) =>
       o.orderNumber.toLowerCase().includes(search.toLowerCase()) ||
@@ -259,15 +305,16 @@ export default function AdminOrdersPage() {
               <th className="px-4 py-3">Phone</th>
               <th className="px-4 py-3">Total</th>
               <th className="px-4 py-3">Status</th>
+              <th className="px-4 py-3">Payment</th>
               <th className="px-4 py-3">Date</th>
               <th className="px-4 py-3 text-right">Action</th>
             </tr>
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={7} className="px-4 py-8 text-center text-muted">Loading...</td></tr>
+              <tr><td colSpan={8} className="px-4 py-8 text-center text-muted">Loading...</td></tr>
             ) : filtered.length === 0 ? (
-              <tr><td colSpan={7} className="px-4 py-8 text-center text-muted">No orders found.</td></tr>
+              <tr><td colSpan={8} className="px-4 py-8 text-center text-muted">No orders found.</td></tr>
             ) : (
               filtered.map((o) => (
                 <tr key={o._id} className="border-b border-gold/10 last:border-0">
@@ -288,6 +335,11 @@ export default function AdminOrdersPage() {
                   <td className="px-4 py-3">
                     <span className={`rounded-full px-3 py-1 text-xs font-medium capitalize ${STATUS_COLORS[o.status]}`}>
                       {o.status}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3">
+                    <span className={`rounded-full px-3 py-1 text-xs font-medium capitalize ${PAYMENT_STATUS_COLORS[o.paymentStatus] || PAYMENT_STATUS_COLORS.pending}`}>
+                      {o.paymentStatus || "pending"}
                     </span>
                   </td>
                   <td className="px-4 py-3 text-ink/70">
@@ -345,11 +397,18 @@ export default function AdminOrdersPage() {
                       {o.customer.phone}
                     </a>
                   </div>
-                  <span
-                    className={`shrink-0 rounded-full px-3 py-1 text-xs font-medium capitalize ${STATUS_COLORS[o.status]}`}
-                  >
-                    {o.status}
-                  </span>
+                  <div className="flex shrink-0 flex-col items-end gap-1.5">
+                    <span
+                      className={`rounded-full px-3 py-1 text-xs font-medium capitalize ${STATUS_COLORS[o.status]}`}
+                    >
+                      {o.status}
+                    </span>
+                    <span
+                      className={`rounded-full px-3 py-1 text-xs font-medium capitalize ${PAYMENT_STATUS_COLORS[o.paymentStatus] || PAYMENT_STATUS_COLORS.pending}`}
+                    >
+                      {o.paymentStatus || "pending"}
+                    </span>
+                  </div>
                 </div>
 
                 <div className="mt-3 flex items-center justify-between border-t border-gold/10 pt-3 text-sm">
@@ -513,6 +572,31 @@ export default function AdminOrdersPage() {
               </div>
             )}
 
+            <div className="leaf-divider my-5" />
+
+            <p className="text-xs font-semibold uppercase text-muted">Payment Status</p>
+            <p className="mt-1 text-xs text-muted">
+              {selected.paymentMethod === "Online"
+                ? "Paid orders are set automatically by Razorpay — only change this manually to correct a mistake."
+                : "For COD/UPI orders, mark as paid once you've confirmed payment was received."}
+            </p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {PAYMENT_STATUSES.map((s) => (
+                <button
+                  key={s}
+                  disabled={updating || selected.paymentStatus === s}
+                  onClick={() => handlePaymentStatusClick(s)}
+                  className={`rounded-full border px-4 py-2 text-xs font-semibold capitalize transition disabled:cursor-default sm:py-1.5 ${
+                    selected.paymentStatus === s
+                      ? "border-forest bg-forest text-ivory"
+                      : "border-gold/30 text-ink/70 hover:bg-champagne"
+                  }`}
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
+
             {selected.status === "cancelled" && (
               <>
                 <div className="leaf-divider my-5" />
@@ -660,6 +744,43 @@ export default function AdminOrdersPage() {
                 {updating ? "Saving..." : "Save tracking"}
               </button>
             </div>
+
+            <div className="leaf-divider my-5" />
+
+            <p className="text-xs font-semibold uppercase text-terracotta">Danger Zone</p>
+            {!showDeleteConfirm ? (
+              <button
+                onClick={() => setShowDeleteConfirm(true)}
+                className="mt-2 rounded-full border border-terracotta/40 px-5 py-2 text-xs font-semibold text-terracotta hover:bg-terracotta/5"
+              >
+                Delete order
+              </button>
+            ) : (
+              <div className="mt-2 rounded-xl2 border border-terracotta/30 bg-terracotta/5 p-4">
+                <p className="text-sm font-semibold text-terracotta">
+                  Permanently delete {selected.orderNumber}?
+                </p>
+                <p className="mt-1 text-xs text-ink/70">
+                  This can't be undone. The order record, tracking info, and history will all be
+                  removed. This does not automatically restock items — do that manually if needed.
+                </p>
+                <div className="mt-3 flex gap-2">
+                  <button
+                    onClick={deleteOrder}
+                    disabled={deleting}
+                    className="rounded-full bg-terracotta px-5 py-2 text-xs font-semibold text-ivory disabled:opacity-60"
+                  >
+                    {deleting ? "Deleting..." : "Yes, delete permanently"}
+                  </button>
+                  <button
+                    onClick={() => setShowDeleteConfirm(false)}
+                    className="rounded-full border border-gold/30 px-5 py-2 text-xs font-semibold text-ink/70"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </Modal>

@@ -13,6 +13,12 @@ const PendingOrderSchema = new mongoose.Schema(
     items: { type: Array, required: true }, // raw cart items: [{ productId, name, price, quantity }]
     shippingFee: { type: Number, default: 0 },
     amount: { type: Number, required: true }, // paise, what was actually charged
+    // Deterministic fingerprint of { customer.phone, items, amount } used
+    // to detect resubmits of the exact same checkout attempt (double
+    // click, back button, retrying after a slow/failed-looking gateway).
+    // Indexed so the dedup lookup in create-order stays fast as this
+    // collection grows.
+    cartSignature: { type: String, default: "", index: true },
     consumed: { type: Boolean, default: false },
     consumedAt: { type: Date, default: null },
   },

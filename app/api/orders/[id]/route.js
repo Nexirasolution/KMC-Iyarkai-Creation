@@ -143,3 +143,36 @@ export async function PUT(req, { params }) {
     return NextResponse.json({ error: "Failed to update order." }, { status: 500 });
   }
 }
+
+export async function DELETE(req, { params }) {
+  try {
+    await connectDB();
+    const { id } = await params;
+    const { searchParams } = new URL(req.url);
+    // Pass ?restock=true to add the order's items back to stock before
+    // deleting — useful if the order is being deleted without ever having
+    // gone through "cancelled" (which already restocks on its own). This
+    // is opt-in rather than automatic, since restocking an order that was
+    // already cancelled (or already shipped/delivered) would double-count
+    // or misrepresent real inventory.
+    const shouldRestock = searchParams.get("restock") === "true";
+
+    const order = await Order.findById(id);
+    if (!order) return NextResponse.json({ error: "Order not found." }, { status: 404 });
+
+    if (shouldRestock && order.status !== "cancelled") {
+      for (const item of order.items) {
+        if (item.product) {
+          await Product.findByIdAndUpdate(item.product, { $inc: { stock: item.quantity } });
+        }
+      }
+    }
+
+    await Order.findByIdAndDelete(id);
+
+    return NextResponse.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    return NextResponse.json({ error: "Failed to delete order." }, { status: 500 });
+  }
+}
