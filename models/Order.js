@@ -103,4 +103,15 @@ const OrderSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+// Database-level safety net: even if some future code path ever
+// reintroduces a race around order creation, MongoDB itself will reject a
+// second Order.create() carrying the same razorpay.orderId with a
+// duplicate-key error instead of silently creating a second order.
+// Partial index so this only applies to Online orders — COD/UPI orders
+// leave razorpay.orderId as "" and shouldn't collide with each other.
+OrderSchema.index(
+  { "razorpay.orderId": 1 },
+  { unique: true, partialFilterExpression: { "razorpay.orderId": { $ne: "" } } }
+);
+
 export default mongoose.models.Order || mongoose.model("Order", OrderSchema);

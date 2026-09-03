@@ -353,6 +353,12 @@ export default function AdminOrdersPage() {
                       >
                         Print label
                       </Link>
+                      <Link
+                        href={`/admin/orders/${o._id}/label-sheet`}
+                        className="text-xs font-semibold text-forest hover:underline"
+                      >
+                        Full-sheet label
+                      </Link>
                       <button onClick={() => setSelected(o)} className="text-xs font-semibold text-forest hover:underline">
                         View
                       </button>
@@ -419,12 +425,20 @@ export default function AdminOrdersPage() {
                 </div>
               </div>
 
-              <Link
-                href={`/admin/orders/${o._id}/label`}
-                className="mt-3 block w-full rounded-full border border-terracotta/40 py-2 text-center text-xs font-semibold text-terracotta"
-              >
-                Print shipping label
-              </Link>
+              <div className="mt-3 flex gap-2">
+                <Link
+                  href={`/admin/orders/${o._id}/label`}
+                  className="flex-1 rounded-full border border-terracotta/40 py-2 text-center text-xs font-semibold text-terracotta"
+                >
+                  Print shipping label
+                </Link>
+                <Link
+                  href={`/admin/orders/${o._id}/label-sheet`}
+                  className="flex-1 rounded-full border border-forest/40 py-2 text-center text-xs font-semibold text-forest"
+                >
+                  Full-sheet label
+                </Link>
+              </div>
             </div>
           ))
         )}
@@ -500,12 +514,20 @@ export default function AdminOrdersPage() {
 
             <div className="flex items-center justify-between">
               <p className="text-xs font-semibold uppercase text-muted">Update Status</p>
-              <Link
-                href={`/admin/orders/${selected._id}/label`}
-                className="rounded-full border border-terracotta/40 px-4 py-1.5 text-xs font-semibold text-terracotta"
-              >
-                Print shipping label
-              </Link>
+              <div className="flex gap-3">
+                <Link
+                  href={`/admin/orders/${selected._id}/label`}
+                  className="rounded-full border border-terracotta/40 px-4 py-1.5 text-xs font-semibold text-terracotta"
+                >
+                  Print shipping label
+                </Link>
+                <Link
+                  href={`/admin/orders/${selected._id}/label-sheet`}
+                  className="rounded-full border border-forest/40 px-4 py-1.5 text-xs font-semibold text-forest"
+                >
+                  Full-sheet label
+                </Link>
+              </div>
             </div>
             <div className="mt-2 grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
               {STATUSES.map((s) => (
