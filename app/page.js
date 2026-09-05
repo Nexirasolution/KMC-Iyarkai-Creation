@@ -14,7 +14,9 @@ export const dynamic = "force-dynamic";
 
 async function getData() {
   await connectDB();
-  const categories = await Category.find({ isActive: true }).sort({ sortOrder: 1 }).lean();
+  // Only top-level categories on the homepage — subcategories are reached
+  // by clicking into a parent on the /products page, not shown here.
+  const categories = await Category.find({ isActive: true, parent: null }).sort({ sortOrder: 1 }).lean();
   const bestSelling = await Product.find({ isActive: true, isFeatured: true })
     .populate("category", "name slug")
     .sort({ createdAt: -1 })

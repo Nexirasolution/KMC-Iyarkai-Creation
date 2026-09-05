@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { connectDB } from "@/lib/mongodb";
 import Product from "@/models/Product";
 import "@/models/Category";
+import { getCategoryAndDescendantIds } from "@/lib/categoryTree";
 
 function slugify(text) {
   return text
@@ -55,7 +56,16 @@ export async function GET(req) {
     const limit = hasPageParam ? (rawLimit > 0 ? rawLimit : 12) : rawLimit;
 
     const query = {};
-    if (category) query.category = category;
+
+    // If a category is selected, include it AND all of its subcategories
+    // (a leaf category with no children just resolves to itself).
+    // This is what makes "click parent -> see parent + all sub products"
+    // and "click subcategory -> see only that subcategory's products" work.
+    if (category) {
+      const categoryIds = await getCategoryAndDescendantIds(category);
+      query.category = { $in: categoryIds };
+    }
+
     if (featured === "true") query.isFeatured = true;
     if (activeOnly === "true") query.isActive = true;
 

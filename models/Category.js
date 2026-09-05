@@ -10,6 +10,7 @@ const CategorySchema = new mongoose.Schema(
       url: { type: String, default: "" },
       publicId: { type: String, default: "" },
     },
+    parent: { type: mongoose.Schema.Types.ObjectId, ref: "Category", default: null },
     isActive: { type: Boolean, default: true },
     sortOrder: { type: Number, default: 0 },
   },

@@ -17,9 +17,13 @@ export async function GET(req) {
     await connectDB();
     const { searchParams } = new URL(req.url);
     const activeOnly = searchParams.get("activeOnly");
+    const topLevelOnly = searchParams.get("topLevelOnly");
+    const parent = searchParams.get("parent");
 
     const query = {};
     if (activeOnly === "true") query.isActive = true;
+    if (topLevelOnly === "true") query.parent = null;
+    if (parent) query.parent = parent;
 
     const categories = await Category.find(query).sort({ sortOrder: 1, name: 1 });
     return NextResponse.json({ categories });
@@ -37,11 +41,21 @@ export async function POST(req) {
       return NextResponse.json({ error: "Category name is required." }, { status: 400 });
     }
 
+    let parent = body.parent || null;
+
+    if (parent) {
+      const parentCategory = await Category.findById(parent);
+      if (!parentCategory) {
+        return NextResponse.json({ error: "Selected parent category does not exist." }, { status: 400 });
+      }
+      // Any depth is allowed — no restriction on the parent itself having a parent.
+    }
+
     let slug = slugify(body.name);
     const existing = await Category.findOne({ slug });
     if (existing) slug = `${slug}-${Date.now().toString().slice(-5)}`;
 
-    const category = await Category.create({ ...body, slug });
+    const category = await Category.create({ ...body, parent, slug });
     return NextResponse.json({ category }, { status: 201 });
   } catch (err) {
     console.error(err);

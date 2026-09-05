@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import ProductCard from "./ProductCard";
 import { CATEGORY_ICONS, LeafIcon } from "./Icons";
@@ -15,12 +15,17 @@ const SORT_OPTIONS = [
 
 const PAGE_SIZE = 12;
 
+function parentIdOf(cat) {
+  if (!cat?.parent) return null;
+  return typeof cat.parent === "object" ? cat.parent._id : cat.parent;
+}
+
 export default function ProductsGrid({ initialCategory, initialSearch }) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
-  // Category AND page now come straight from the URL, so back/forward always
+  // Category AND page come straight from the URL, so back/forward always
   // reflects both correctly.
   const activeCategory = searchParams.get("category") || "";
   const page = Number(searchParams.get("page")) || 1;
@@ -40,6 +45,29 @@ export default function ProductsGrid({ initialCategory, initialSearch }) {
       .then((r) => r.json())
       .then((d) => setCategories(d.categories || []));
   }, []);
+
+  // ---- category tree helpers ----
+  const categoryById = useMemo(() => {
+    const map = {};
+    categories.forEach((c) => (map[c._id] = c));
+    return map;
+  }, [categories]);
+
+  const topLevelCategories = useMemo(
+    () => categories.filter((c) => !c.parent),
+    [categories]
+  );
+
+  function childrenOf(catId) {
+    return categories.filter((c) => String(parentIdOf(c)) === String(catId));
+  }
+
+  const activeCat = activeCategory ? categoryById[activeCategory] : null;
+  // If the active category is a subcategory, show its siblings.
+  // If the active category is itself a top-level parent, show its own children.
+  const activeParentId = activeCat ? parentIdOf(activeCat) || activeCat._id : "";
+  const subcategories = activeParentId ? childrenOf(activeParentId) : [];
+  const activeParentCat = activeParentId ? categoryById[activeParentId] : null;
 
   // Any FILTER change should jump back to page 1. Note `page` is deliberately
   // NOT in this dependency list — otherwise paging back/forward would
@@ -126,7 +154,7 @@ export default function ProductsGrid({ initialCategory, initialSearch }) {
 
   return (
     <div>
-      <div className="mb-4 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+      <div className="mb-3 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div className="flex flex-wrap gap-2">
           <button
             onClick={() => setCategoryInUrl("")}
@@ -138,14 +166,16 @@ export default function ProductsGrid({ initialCategory, initialSearch }) {
           >
             All
           </button>
-          {categories.map((cat) => {
+          {topLevelCategories.map((cat) => {
             const Icon = CATEGORY_ICONS[cat.icon] || LeafIcon;
+            // Active if this parent is selected directly, OR one of its children is active
+            const isActive = activeCategory === cat._id || activeParentId === cat._id;
             return (
               <button
                 key={cat._id}
                 onClick={() => setCategoryInUrl(cat._id)}
                 className={`flex items-center gap-1.5 rounded-full border px-4 py-2 text-xs font-semibold transition ${
-                  activeCategory === cat._id
+                  isActive
                     ? "border-forest bg-forest text-ivory"
                     : "border-gold/30 text-ink/70 hover:bg-champagne"
                 }`}
@@ -165,6 +195,38 @@ export default function ProductsGrid({ initialCategory, initialSearch }) {
           className="w-full rounded-full border border-gold/30 bg-white px-5 py-2.5 text-sm outline-none focus:border-forest md:w-64"
         />
       </div>
+
+      {/* Subcategory row — shown once a parent (or one of its children) is active */}
+      {subcategories.length > 0 && (
+        <div className="mb-6 flex flex-wrap items-center gap-2 border-l-2 border-gold/30 pl-3">
+          <span className="text-[11px] font-semibold uppercase tracking-wide text-ink/40">
+            {activeParentCat?.name}:
+          </span>
+          <button
+            onClick={() => setCategoryInUrl(activeParentId)}
+            className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
+              activeCategory === activeParentId
+                ? "border-forest bg-forest text-ivory"
+                : "border-gold/20 text-ink/60 hover:bg-champagne"
+            }`}
+          >
+            All
+          </button>
+          {subcategories.map((sub) => (
+            <button
+              key={sub._id}
+              onClick={() => setCategoryInUrl(sub._id)}
+              className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
+                activeCategory === sub._id
+                  ? "border-forest bg-forest text-ivory"
+                  : "border-gold/20 text-ink/60 hover:bg-champagne"
+              }`}
+            >
+              {sub.name}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Sort + price filter row */}
       <div className="mb-8 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">

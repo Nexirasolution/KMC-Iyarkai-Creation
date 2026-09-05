@@ -121,7 +121,19 @@ export default function ShippingLabelSheetPage() {
         id="label-sheet-print-area"
         className="mx-auto flex aspect-[210/297] w-full max-w-3xl flex-col justify-between border border-ink/20 bg-white p-10 text-ink shadow-card print:aspect-auto print:max-w-none print:border-0 print:shadow-none"
       >
-        {/* Top area: From address, plain, top-left */}
+        {/* Top area: To address, plain, top-right */}
+        <div className="flex justify-end">
+          <div className="max-w-sm text-right">
+            <p className="text-[11px] uppercase tracking-wide text-muted">To</p>
+            <p className="mt-1 text-xl font-bold">{order.customer.name}</p>
+            <p className="mt-1 text-base leading-snug">
+              {order.customer.address}, {order.customer.city} {order.customer.pincode}, {order.customer.state}
+            </p>
+            <p className="mt-1 text-base">Phone: {order.customer.phone}</p>
+          </div>
+        </div>
+
+        {/* Bottom area: From address, plain, bottom-left */}
         <div>
           <p className="text-[11px] uppercase tracking-wide text-muted">From</p>
           {settings?.storeName && <p className="mt-1 text-base font-bold">{settings.storeName}</p>}
@@ -135,18 +147,6 @@ export default function ShippingLabelSheetPage() {
               {order.paymentMethod}
             </span>
             <span>Order {order.orderNumber}</span>
-          </div>
-        </div>
-
-        {/* Bottom area: To address, plain, bottom-right */}
-        <div className="flex justify-end">
-          <div className="max-w-sm text-right">
-            <p className="text-[11px] uppercase tracking-wide text-muted">To</p>
-            <p className="mt-1 text-xl font-bold">{order.customer.name}</p>
-            <p className="mt-1 text-base leading-snug">
-              {order.customer.address}, {order.customer.city} {order.customer.pincode}, {order.customer.state}
-            </p>
-            <p className="mt-1 text-base">Phone: {order.customer.phone}</p>
           </div>
         </div>
       </div>
