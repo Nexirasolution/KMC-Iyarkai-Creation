@@ -2,17 +2,14 @@ import { NextResponse } from "next/server";
 import { connectDB } from "@/lib/mongodb";
 import Order from "@/models/Order";
 import Product from "@/models/Product";
-
-async function generateOrderNumber() {
-  const prefix = "KMC";
-  const date = new Date();
-  const datePart = `${date.getFullYear().toString().slice(-2)}${(date.getMonth() + 1)
-    .toString()
-    .padStart(2, "0")}${date.getDate().toString().padStart(2, "0")}`;
-  const count = await Order.countDocuments();
-  const seq = (count + 1).toString().padStart(4, "0");
-  return `${prefix}-${datePart}-${seq}`;
-}
+// FIXED: this file used to have its own local copy of generateOrderNumber()
+// built on Order.countDocuments(), identical to the buggy version that used
+// to live in lib/createOrderFromPending.js. Two separate copies of the same
+// non-atomic logic meant fixing one path (Razorpay orders) would NOT have
+// fixed this one (COD/manual admin-created orders) — they'd have kept
+// colliding independently. Now both routes share the single atomic
+// implementation below.
+import { generateOrderNumber } from "@/lib/createOrderFromPending";
 
 export async function GET(req) {
   try {
@@ -75,19 +72,37 @@ export async function POST(req) {
     }
 
     const total = subtotal + Number(shippingFee || 0);
-    const orderNumber = await generateOrderNumber();
 
-    const order = await Order.create({
-      orderNumber,
-      customer,
-      items: validatedItems,
-      subtotal,
-      shippingFee,
-      total,
-      paymentMethod: paymentMethod || "COD",
-      status: "pending",
-      statusHistory: [{ status: "pending", note: "Order placed" }],
-    });
+    // Retry on the rare chance of an orderNumber clash (same defensive
+    // backstop used in createOrderFromPending.js), since this route can
+    // run concurrently with Razorpay order creation for the same day.
+    let order;
+    let attempts = 0;
+    while (true) {
+      attempts += 1;
+      const orderNumber = await generateOrderNumber();
+      try {
+        order = await Order.create({
+          orderNumber,
+          customer,
+          items: validatedItems,
+          subtotal,
+          shippingFee,
+          total,
+          paymentMethod: paymentMethod || "COD",
+          status: "pending",
+          statusHistory: [{ status: "pending", note: "Order placed" }],
+        });
+        break;
+      } catch (err) {
+        const isOrderNumberClash =
+          err?.code === 11000 && Object.keys(err?.keyPattern || {}).includes("orderNumber");
+        if (isOrderNumberClash && attempts < 5) {
+          continue;
+        }
+        throw err;
+      }
+    }
 
     // Decrement stock
     for (const item of validatedItems) {
