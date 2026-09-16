@@ -8,10 +8,10 @@ import Product from "../models/Product.js";
 import { generateOrderNumber } from "../lib/createOrderFromPending.js";
 
 const razorpayOrderIds = [
-  { id: "order_TX4X8lHdmQk4dZ", paymentId: "pay_TX4XLZfqKZJRDD" },
-  { id: "order_TXFzWAgckEyGTD", paymentId: "pay_TXFzcgPBIErs3o" },
-  { id: "order_TbvD5oDI9KNlf8", paymentId: "pay_TbvDAl7NqZBwrE" },
-  { id: "order_TbvhuyfBnreQFD", paymentId: "pay_Tbvi79OUsklIlk" },
+  { id: "order_TcbaDMRqnQXG4o", paymentId: "pay_TcbaJgXeNWAGUS" },
+  { id: "order_Tcg7YZzgvPBNLS", paymentId: "pay_Tcg7kP1pJiNFqc" },
+   { id: "order_TcgcdjJj9pZfWD", paymentId: "pay_TcgcmW7GmPvQd7" },
+  
 ];
 
 async function main() {
