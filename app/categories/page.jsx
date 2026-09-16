@@ -90,17 +90,37 @@ export default async function CategoriesPage() {
                     </div>
                   </Link>
 
+                  {/* Subcategories: shown as round image icons (with a
+                      fallback icon glyph when no image is set), matching
+                      the visual style of the parent category above, rather
+                      than as plain text pills. */}
                   {cat.children.length > 0 && (
-                    <div className="mt-4 flex flex-wrap gap-2 border-t border-gold/10 pt-4">
-                      {cat.children.map((sub) => (
-                        <Link
-                          key={sub._id}
-                          href={`/products?category=${sub._id}`}
-                          className="rounded-full border border-gold/20 px-3 py-1.5 text-xs font-semibold text-ink/70 transition hover:bg-champagne"
-                        >
-                          {sub.name}
-                        </Link>
-                      ))}
+                    <div className="mt-4 flex flex-wrap gap-x-4 gap-y-3 border-t border-gold/10 pt-4">
+                      {cat.children.map((sub) => {
+                        const SubIcon = CATEGORY_ICONS[sub.icon] || LeafIcon;
+                        return (
+                          <Link
+                            key={sub._id}
+                            href={`/products?category=${sub._id}`}
+                            className="flex w-16 flex-col items-center gap-1.5 text-center transition hover:opacity-80"
+                          >
+                            {sub.image?.url ? (
+                              <img
+                                src={sub.image.url}
+                                alt={sub.name}
+                                className="h-12 w-12 rounded-full border border-gold/20 object-cover"
+                              />
+                            ) : (
+                              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-champagne">
+                                <SubIcon className="h-5 w-5 text-forest" />
+                              </div>
+                            )}
+                            <span className="line-clamp-2 text-[11px] font-medium leading-tight text-ink/70">
+                              {sub.name}
+                            </span>
+                          </Link>
+                        );
+                      })}
                     </div>
                   )}
                 </div>

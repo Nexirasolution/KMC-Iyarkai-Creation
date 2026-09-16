@@ -20,6 +20,45 @@ function parentIdOf(cat) {
   return typeof cat.parent === "object" ? cat.parent._id : cat.parent;
 }
 
+// Round image-icon button used for both the top-level category row and the
+// subcategory row. `size` controls the circle's diameter so subcategories
+// can render slightly smaller than parent categories, matching the visual
+// hierarchy used on the /categories page.
+function CategoryIconButton({ image, icon, label, isActive, onClick, size = "h-14 w-14" }) {
+  const Icon = CATEGORY_ICONS[icon] || LeafIcon;
+  return (
+    <button
+      onClick={onClick}
+      className="flex w-16 flex-col items-center gap-1.5 text-center"
+    >
+      <span
+        className={`flex ${size} shrink-0 items-center justify-center overflow-hidden rounded-full border-2 transition ${
+          isActive ? "border-forest" : "border-gold/20 hover:border-gold/40"
+        }`}
+      >
+        {image?.url ? (
+          <img src={image.url} alt={label} className="h-full w-full object-cover" />
+        ) : (
+          <span
+            className={`flex h-full w-full items-center justify-center ${
+              isActive ? "bg-forest text-ivory" : "bg-champagne text-forest"
+            }`}
+          >
+            <Icon className="h-1/2 w-1/2" />
+          </span>
+        )}
+      </span>
+      <span
+        className={`line-clamp-2 text-[11px] font-semibold leading-tight ${
+          isActive ? "text-forest" : "text-ink/70"
+        }`}
+      >
+        {label}
+      </span>
+    </button>
+  );
+}
+
 export default function ProductsGrid({ initialCategory, initialSearch }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -154,35 +193,30 @@ export default function ProductsGrid({ initialCategory, initialSearch }) {
 
   return (
     <div>
-      <div className="mb-3 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-        <div className="flex flex-wrap gap-2">
-          <button
+      <div className="mb-6 flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+        {/* Top-level categories, shown as round image icons (falling back
+            to the category's icon glyph when no image is set), matching
+            the style used on the /categories page. */}
+        <div className="flex flex-wrap gap-x-4 gap-y-3">
+          <CategoryIconButton
+            image={null}
+            icon="leaf"
+            label="All"
+            isActive={activeCategory === ""}
             onClick={() => setCategoryInUrl("")}
-            className={`rounded-full border px-4 py-2 text-xs font-semibold transition ${
-              activeCategory === ""
-                ? "border-forest bg-forest text-ivory"
-                : "border-gold/30 text-ink/70 hover:bg-champagne"
-            }`}
-          >
-            All
-          </button>
+          />
           {topLevelCategories.map((cat) => {
-            const Icon = CATEGORY_ICONS[cat.icon] || LeafIcon;
             // Active if this parent is selected directly, OR one of its children is active
             const isActive = activeCategory === cat._id || activeParentId === cat._id;
             return (
-              <button
+              <CategoryIconButton
                 key={cat._id}
+                image={cat.image}
+                icon={cat.icon}
+                label={cat.name}
+                isActive={isActive}
                 onClick={() => setCategoryInUrl(cat._id)}
-                className={`flex items-center gap-1.5 rounded-full border px-4 py-2 text-xs font-semibold transition ${
-                  isActive
-                    ? "border-forest bg-forest text-ivory"
-                    : "border-gold/30 text-ink/70 hover:bg-champagne"
-                }`}
-              >
-                <Icon className="h-3.5 w-3.5" />
-                {cat.name}
-              </button>
+              />
             );
           })}
         </div>
@@ -196,34 +230,34 @@ export default function ProductsGrid({ initialCategory, initialSearch }) {
         />
       </div>
 
-      {/* Subcategory row — shown once a parent (or one of its children) is active */}
+      {/* Subcategory row — shown once a parent (or one of its children) is
+          active. Same round-icon treatment as the top-level row, just
+          smaller, since these are one level deeper. */}
       {subcategories.length > 0 && (
-        <div className="mb-6 flex flex-wrap items-center gap-2 border-l-2 border-gold/30 pl-3">
-          <span className="text-[11px] font-semibold uppercase tracking-wide text-ink/40">
-            {activeParentCat?.name}:
-          </span>
-          <button
+        <div className="mb-6 flex flex-wrap items-start gap-x-4 gap-y-3 border-l-2 border-gold/30 pl-4">
+          <div className="flex w-16 flex-col items-center gap-1.5 text-center">
+            <span className="text-[11px] font-semibold uppercase tracking-wide text-ink/40">
+              {activeParentCat?.name}
+            </span>
+          </div>
+          <CategoryIconButton
+            image={null}
+            icon={activeParentCat?.icon}
+            label="All"
+            isActive={activeCategory === activeParentId}
             onClick={() => setCategoryInUrl(activeParentId)}
-            className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
-              activeCategory === activeParentId
-                ? "border-forest bg-forest text-ivory"
-                : "border-gold/20 text-ink/60 hover:bg-champagne"
-            }`}
-          >
-            All
-          </button>
+            size="h-11 w-11"
+          />
           {subcategories.map((sub) => (
-            <button
+            <CategoryIconButton
               key={sub._id}
+              image={sub.image}
+              icon={sub.icon}
+              label={sub.name}
+              isActive={activeCategory === sub._id}
               onClick={() => setCategoryInUrl(sub._id)}
-              className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
-                activeCategory === sub._id
-                  ? "border-forest bg-forest text-ivory"
-                  : "border-gold/20 text-ink/60 hover:bg-champagne"
-              }`}
-            >
-              {sub.name}
-            </button>
+              size="h-11 w-11"
+            />
           ))}
         </div>
       )}
