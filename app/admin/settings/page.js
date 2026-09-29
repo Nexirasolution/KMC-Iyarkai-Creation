@@ -167,6 +167,9 @@ export default function SettingsPage() {
                 onChange={handleChange}
                 className="w-full border rounded-xl px-4 py-3"
               />
+              <p className="mt-1 text-xs text-gray-500">
+                Shown on the order confirmation page for immediate enquiries.
+              </p>
             </div>
 
             <div>
@@ -179,6 +182,9 @@ export default function SettingsPage() {
                 placeholder="919876543210"
                 className="w-full border rounded-xl px-4 py-3"
               />
+              <p className="mt-1 text-xs text-gray-500">
+                Optional. Adds a WhatsApp link next to the phone number on the order confirmation page.
+              </p>
             </div>
 
             <div>
@@ -188,8 +194,12 @@ export default function SettingsPage() {
                 name="deliveryTime"
                 value={settings.deliveryTime}
                 onChange={handleChange}
+                placeholder="7 to 10 days"
                 className="w-full border rounded-xl px-4 py-3"
               />
+              <p className="mt-1 text-xs text-gray-500">
+                Shown on the order confirmation page as &quot;delivered within …&quot;.
+              </p>
             </div>
 
             <div className="md:col-span-2">

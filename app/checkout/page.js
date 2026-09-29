@@ -8,6 +8,13 @@ import Footer from "@/components/Footer";
 import { useCart } from "@/context/CartContext";
 import { INDIAN_STATES } from "@/lib/indianStates";
 
+// Turns a stored phone number into a dialable / WhatsApp-ready number.
+// Bare 10-digit numbers are assumed to be Indian and get the +91 country code.
+function toDigits(phone) {
+  const digits = String(phone || "").replace(/\D/g, "");
+  return digits.length === 10 ? `91${digits}` : digits;
+}
+
 export default function CheckoutPage() {
   const { items, subtotal, clearCart, hydrated } = useCart();
   const router = useRouter();
@@ -202,6 +209,48 @@ export default function CheckoutPage() {
           <p className="mt-4 text-sm text-muted">
             Save this number, or use your phone number, to track your order anytime.
           </p>
+
+          {(settings.deliveryTime || settings.phone || settings.whatsapp) && (
+            <div className="mt-6 rounded-xl2 border border-gold/20 bg-champagne/50 p-5 text-sm text-ink/80">
+              {settings.deliveryTime && (
+                <p>
+                  Your order will be delivered within{" "}
+                  <span className="font-semibold text-forest">{settings.deliveryTime}</span>.
+                </p>
+              )}
+              {(settings.phone || settings.whatsapp) && (
+                <p className={settings.deliveryTime ? "mt-2" : ""}>
+                  For any immediate enquiry, contact us
+                  {settings.phone && (
+                    <>
+                      {" "}at{" "}
+                      <a
+                        href={`tel:+${toDigits(settings.phone)}`}
+                        className="font-semibold text-forest hover:underline"
+                      >
+                        {settings.phone}
+                      </a>
+                    </>
+                  )}
+                  {settings.phone && settings.whatsapp && " or"}
+                  {settings.whatsapp && (
+                    <>
+                      {" "}on{" "}
+                      <a
+                        href={`https://wa.me/${toDigits(settings.whatsapp)}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="font-semibold text-forest hover:underline"
+                      >
+                        WhatsApp
+                      </a>
+                    </>
+                  )}
+                  .
+                </p>
+              )}
+            </div>
+          )}
           <div className="mt-8 flex justify-center gap-4">
             <a
               href="/track-order"
