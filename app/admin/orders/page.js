@@ -7,6 +7,8 @@ import Modal from "@/components/Modal";
 const STATUSES = ["pending", "confirmed", "packed", "shipped", "delivered", "cancelled"];
 const PAYMENT_STATUSES = ["pending", "paid", "failed"];
 
+const STORE_NAME = "KMC Iyarkai Creation";
+
 const STATUS_COLORS = {
   pending: "bg-gold/20 text-gold-dark",
   confirmed: "bg-forest/10 text-forest",
@@ -24,13 +26,58 @@ const PAYMENT_STATUS_COLORS = {
 
 const EMPTY_TRACKING = { courier: "", trackingNumber: "", trackingUrl: "" };
 
-// Builds a wa.me link from a phone number. Assumes bare 10-digit numbers
-// are Indian mobile numbers missing the country code — adjust if your
-// stored phone format differs (e.g. already includes +91).
-function toWhatsAppLink(phone) {
+// Builds a wa.me link from a phone number, optionally with a pre-filled message.
+// Assumes bare 10-digit numbers are Indian mobile numbers missing the country
+// code — adjust if your stored phone format differs (e.g. already includes +91).
+function toWhatsAppLink(phone, text) {
   const digits = (phone || "").replace(/\D/g, "");
   const number = digits.length === 10 ? `91${digits}` : digits;
-  return `https://wa.me/${number}`;
+  return `https://wa.me/${number}${text ? `?text=${encodeURIComponent(text)}` : ""}`;
+}
+
+// Builds the message shown to the admin before sending. Edit the wording here.
+function buildWhatsAppMessage(order) {
+  if (!order) return "";
+  const name = order.customer?.name || "there";
+  const ref = `${order.orderNumber} (₹${order.total})`;
+  const lines = [];
+
+  switch (order.status) {
+    case "confirmed":
+      lines.push(`Hi ${name}, your order ${ref} has been confirmed. We'll start packing it soon.`);
+      break;
+    case "packed":
+      lines.push(`Hi ${name}, your order ${ref} has been packed and is ready to be shipped.`);
+      break;
+    case "shipped": {
+      lines.push(`Hi ${name}, your order ${ref} has been shipped!`);
+      const t = order.tracking || {};
+      if (t.courier) lines.push(`Courier: ${t.courier}`);
+      if (t.trackingNumber) lines.push(`Tracking number: ${t.trackingNumber}`);
+      if (t.trackingUrl) lines.push(`Track here: ${t.trackingUrl}`);
+      break;
+    }
+    case "delivered":
+      lines.push(`Hi ${name}, your order ${ref} has been delivered. We hope you love it! Thank you for shopping with us.`);
+      break;
+    case "cancelled": {
+      lines.push(`Hi ${name}, your order ${ref} has been cancelled.`);
+      if (order.cancellation?.reason) lines.push(`Reason: ${order.cancellation.reason}`);
+      if (order.refund?.status === "refunded") {
+        lines.push(
+          `A refund of ₹${order.refund.amount} has been processed${
+            order.refund.method ? ` via ${order.refund.method}` : ""
+          }. It may take a few working days to reflect in your account.`
+        );
+      }
+      break;
+    }
+    default:
+      lines.push(`Hi ${name}, thank you for your order ${ref}! We have received it and will confirm it shortly.`);
+  }
+
+  lines.push("", `- ${STORE_NAME}`);
+  return lines.join("\n");
 }
 
 function Toast({ toast, onClose }) {
@@ -81,6 +128,11 @@ export default function AdminOrdersPage() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
+  // WhatsApp message for the order open in the modal (editable before sending)
+  const [waMessage, setWaMessage] = useState("");
+  // Set after a status change so the WhatsApp section prompts the admin to notify the customer
+  const [notifyFor, setNotifyFor] = useState(null); // { id, status } | null
+
   const showToast = useCallback((message, type = "success") => {
     setToast({ message, type });
   }, []);
@@ -109,16 +161,24 @@ export default function AdminOrdersPage() {
       setRefundAmount(selected.refund?.amount ? String(selected.refund.amount) : String(selected.total || ""));
       setRefundMethod(selected.refund?.method || "");
       setRefundNote(selected.refund?.note || "");
+      // Regenerated whenever the order changes (status, tracking, refund...)
+      setWaMessage(buildWhatsAppMessage(selected));
     } else {
       setTracking(EMPTY_TRACKING);
       setRefundAmount("");
       setRefundMethod("");
       setRefundNote("");
+      setWaMessage("");
     }
     setShowCancelForm(false);
     setCancelReason("");
     setShowDeleteConfirm(false);
   }, [selected]);
+
+  function closeModal() {
+    setSelected(null);
+    setNotifyFor(null);
+  }
 
   async function updateStatus(id, status, extra = {}) {
     setUpdating(true);
@@ -131,6 +191,7 @@ export default function AdminOrdersPage() {
     setUpdating(false);
     if (res.ok) {
       setSelected(data.order);
+      setNotifyFor({ id, status });
       loadOrders();
       showToast(`Status updated to "${status}"`);
       return true;
@@ -240,7 +301,7 @@ export default function AdminOrdersPage() {
     if (res.ok) {
       showToast(`Order ${selected.orderNumber} deleted`);
       setShowDeleteConfirm(false);
-      setSelected(null);
+      closeModal();
       loadOrders();
     } else {
       showToast(data.error || "Failed to delete order", "error");
@@ -258,6 +319,8 @@ export default function AdminOrdersPage() {
     selected?.paymentMethod === "Online" &&
     selected?.paymentStatus === "paid" &&
     !!selected?.razorpay?.paymentId;
+
+  const notifyActive = !!selected && notifyFor?.id === selected._id;
 
   return (
     <div>
@@ -347,6 +410,15 @@ export default function AdminOrdersPage() {
                   </td>
                   <td className="px-4 py-3 text-right">
                     <div className="flex justify-end gap-3">
+                      <a
+                        href={toWhatsAppLink(o.customer.phone, buildWhatsAppMessage(o))}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        title={`Send "${o.status}" update on WhatsApp`}
+                        className="text-xs font-semibold text-forest hover:underline"
+                      >
+                        WhatsApp
+                      </a>
                       <Link
                         href={`/admin/orders/${o._id}/label`}
                         className="text-xs font-semibold text-terracotta hover:underline"
@@ -426,6 +498,14 @@ export default function AdminOrdersPage() {
               </div>
 
               <div className="mt-3 flex gap-2">
+                <a
+                  href={toWhatsAppLink(o.customer.phone, buildWhatsAppMessage(o))}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex-1 rounded-full bg-forest py-2 text-center text-xs font-semibold text-ivory"
+                >
+                  WhatsApp update
+                </a>
                 <Link
                   href={`/admin/orders/${o._id}/label`}
                   className="flex-1 rounded-full border border-terracotta/40 py-2 text-center text-xs font-semibold text-terracotta"
@@ -444,7 +524,7 @@ export default function AdminOrdersPage() {
         )}
       </div>
 
-      <Modal open={!!selected} onClose={() => setSelected(null)} title={selected?.orderNumber || ""} wide>
+      <Modal open={!!selected} onClose={closeModal} title={selected?.orderNumber || ""} wide>
         {selected && (
           <div>
             <div className="grid gap-4 sm:grid-cols-2">
@@ -593,6 +673,49 @@ export default function AdminOrdersPage() {
                 )}
               </div>
             )}
+
+            {/* WhatsApp update to the customer (manual send) */}
+            <div
+              className={`mt-4 rounded-xl2 border p-4 ${
+                notifyActive ? "border-forest/40 bg-forest/5" : "border-gold/20 bg-champagne/30"
+              }`}
+            >
+              <p className="text-xs font-semibold uppercase text-muted">WhatsApp update to customer</p>
+              <p className={`mt-1 text-xs ${notifyActive ? "font-medium text-forest" : "text-muted"}`}>
+                {notifyActive
+                  ? `Status changed to "${selected.status}" — let ${selected.customer.name} know.`
+                  : "Opens WhatsApp with this message ready to send. Edit it first if you like."}
+              </p>
+              <textarea
+                rows={5}
+                value={waMessage}
+                onChange={(e) => setWaMessage(e.target.value)}
+                className="mt-2 w-full rounded-xl2 border border-gold/30 bg-white px-4 py-2 text-sm outline-none focus:border-forest"
+              />
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <a
+                  href={toWhatsAppLink(selected.customer.phone, waMessage)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={() => setNotifyFor(null)}
+                  className="rounded-full bg-forest px-5 py-2 text-xs font-semibold text-ivory shadow-card hover:bg-forest-light"
+                >
+                  Send on WhatsApp
+                </a>
+                <button
+                  type="button"
+                  onClick={() => setWaMessage(buildWhatsAppMessage(selected))}
+                  className="rounded-full border border-gold/30 px-4 py-2 text-xs font-semibold text-ink/70 hover:bg-champagne"
+                >
+                  Reset message
+                </button>
+                {selected.status === "shipped" && !selected.tracking?.trackingNumber && (
+                  <span className="text-xs text-gold-dark">
+                    Tip: save the tracking details below first to include them in the message.
+                  </span>
+                )}
+              </div>
+            </div>
 
             <div className="leaf-divider my-5" />
 
