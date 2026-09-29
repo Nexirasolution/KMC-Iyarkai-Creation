@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 
-const AUTO_SCROLL_MS = 4000;
+const AUTO_SCROLL_MS = 8000;
 const SWIPE_THRESHOLD = 50; // px
 
 export default function ProductGallery({ media, productName }) {
