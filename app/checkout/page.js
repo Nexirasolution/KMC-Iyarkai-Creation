@@ -39,6 +39,35 @@ export default function CheckoutPage() {
       .catch(() => {});
   }, []);
 
+  // Only offer the states that have a shipping rate set in Settings.
+  // If no state rates are configured at all (or none match the state list),
+  // fall back to every state so checkout never ends up with an empty dropdown.
+  const restrictedToConfigured = useMemo(() => {
+    const configured = new Set(
+      (settings.stateShippingRates || [])
+        .map((r) => r.state?.trim().toLowerCase())
+        .filter(Boolean)
+    );
+    return configured.size > 0 && INDIAN_STATES.some((s) => configured.has(s.toLowerCase()));
+  }, [settings.stateShippingRates]);
+
+  const availableStates = useMemo(() => {
+    if (!restrictedToConfigured) return INDIAN_STATES;
+    const configured = new Set(
+      (settings.stateShippingRates || []).map((r) => r.state?.trim().toLowerCase())
+    );
+    // Keep the standard state names / order from INDIAN_STATES
+    return INDIAN_STATES.filter((s) => configured.has(s.toLowerCase()));
+  }, [settings.stateShippingRates, restrictedToConfigured]);
+
+  // If the selected state isn't deliverable (e.g. the default "Tamil Nadu" has
+  // no rate), switch to the first available one.
+  useEffect(() => {
+    if (availableStates.length > 0 && !availableStates.includes(form.state)) {
+      setForm((f) => ({ ...f, state: availableStates[0] }));
+    }
+  }, [availableStates, form.state]);
+
   // Look up the fee for the selected state; fall back to the default fee
   // when that state has no override configured in Settings.
   const stateFee = useMemo(() => {
@@ -58,6 +87,10 @@ export default function CheckoutPage() {
   function validate() {
     if (items.length === 0) {
       setError("Your cart is empty.");
+      return false;
+    }
+    if (!availableStates.includes(form.state)) {
+      setError("Sorry, we don't deliver to the selected state. Please choose another state.");
       return false;
     }
     if (!/^\d{10}$/.test(form.phone.replace(/\D/g, "").slice(-10))) {
@@ -220,13 +253,19 @@ export default function CheckoutPage() {
                     onChange={(e) => update("state", e.target.value)}
                     className="w-full rounded-xl border border-gold/30 bg-white px-4 py-2.5 text-sm outline-none focus:border-forest"
                   >
-                    {INDIAN_STATES.map((s) => (
+                    {availableStates.map((s) => (
                       <option key={s} value={s}>{s}</option>
                     ))}
                   </select>
                 </label>
                 <Field label="Pincode" value={form.pincode} onChange={(v) => update("pincode", v)} />
               </div>
+
+              {restrictedToConfigured && (
+                <p className="text-xs text-muted">
+                  We currently deliver to: {availableStates.join(", ")}.
+                </p>
+              )}
 
               <div>
                 <p className="mb-2 text-sm font-semibold text-ink">Payment Method</p>

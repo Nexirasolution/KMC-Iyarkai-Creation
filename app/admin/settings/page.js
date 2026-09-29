@@ -213,7 +213,8 @@ export default function SettingsPage() {
                 className="w-full border rounded-xl px-4 py-3"
               />
               <p className="mt-1 text-xs text-gray-500">
-                Used for any state that doesn&apos;t have its own rate below.
+                Used for every order when no state rates are set below. Once you add state rates,
+                only those states are offered at checkout, each with its own fee.
               </p>
             </div>
 
@@ -243,9 +244,15 @@ export default function SettingsPage() {
                 </button>
               </div>
 
+              <p className="mb-3 text-xs text-gray-500">
+                Customers can only choose the states listed here at checkout. States without a rate
+                are not delivered to.
+              </p>
+
               {settings.stateShippingRates.length === 0 ? (
                 <p className="text-sm text-gray-500">
-                  No state-specific rates yet — every order uses the default shipping fee above.
+                  No state rates yet — checkout shows all states and every order uses the default
+                  shipping fee above.
                 </p>
               ) : (
                 <div className="space-y-3">

@@ -14,7 +14,7 @@ export default function CartPage() {
 
   return (
     <>
-      <Navbar />
+      <Navbar  />
 
       <section className="mx-auto max-w-5xl px-5 py-12 md:px-8">
         <h1 className="font-display text-3xl font-bold text-forest">Your Cart</h1>

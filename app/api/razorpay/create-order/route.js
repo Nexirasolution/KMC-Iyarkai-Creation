@@ -3,7 +3,9 @@ import { getRazorpay } from "@/lib/razorpay";
 import { connectDB } from "@/lib/mongodb";
 import PendingOrder from "@/models/PendingOrder";
 import Product from "@/models/Product";
+import Settings from "@/models/Settings";
 import { buildCartSignature } from "@/lib/cartSignature";
+import { INDIAN_STATES } from "@/lib/indianStates";
 
 // If the same customer resubmits the exact same cart (same phone, same
 // items, same amount) within this window, treat it as a resubmit —
@@ -28,6 +30,33 @@ export async function POST(req) {
     }
 
     await connectDB();
+
+    // --- Delivery state check ---
+    // When state shipping rates are set in Settings, we only deliver to those
+    // states (the checkout page only shows them too). This re-checks on the
+    // server so the restriction can't be bypassed by editing the request.
+    // If no state rates are configured, every state is allowed.
+    const settings = await Settings.findOne();
+    const configuredStates = new Set(
+      (settings?.stateShippingRates || [])
+        .map((r) => String(r.state || "").trim().toLowerCase())
+        .filter(Boolean)
+    );
+    const restrictToConfigured =
+      configuredStates.size > 0 &&
+      INDIAN_STATES.some((s) => configuredStates.has(s.toLowerCase()));
+
+    if (restrictToConfigured) {
+      const state = String(customer.state || "").trim().toLowerCase();
+      if (!configuredStates.has(state)) {
+        return NextResponse.json(
+          {
+            error: `Sorry, we don't deliver to ${customer.state || "the selected state"} yet. Please choose another state.`,
+          },
+          { status: 400 }
+        );
+      }
+    }
 
     // Sanity-check stock up front so we don't open a payment window for an
     // order that can't be fulfilled. The authoritative check happens again
