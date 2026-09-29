@@ -24,6 +24,23 @@ const EMPTY_FORM = {
   media: [],
 };
 
+const EMPTY_BULK = {
+  priceMode: "",
+  priceValue: "",
+  category: "",
+  status: "",
+  featured: "",
+  unit: "",
+};
+
+const PRICE_MODE_LABELS = {
+  set: "Set price to ₹",
+  increase_percent: "Increase price by %",
+  decrease_percent: "Decrease price by %",
+  increase_amount: "Increase price by ₹",
+  decrease_amount: "Decrease price by ₹",
+};
+
 const PAGE_SIZE = 20;
 
 export default function AdminProductsPage() {
@@ -37,14 +54,23 @@ export default function AdminProductsPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState(""); // "" = all categories
   const [page, setPage] = useState(1);
   const [pagination, setPagination] = useState(null);
   const [exporting, setExporting] = useState(false);
+
+  // Bulk update state
+  const [selected, setSelected] = useState(() => new Set());
+  const [selectAllMatching, setSelectAllMatching] = useState(false); // true = every product matching the filter, across all pages
+  const [bulk, setBulk] = useState(EMPTY_BULK);
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [notice, setNotice] = useState(null); // { type: "success" | "error", text }
 
   async function loadProducts() {
     setLoading(true);
     const params = new URLSearchParams({ page: String(page), limit: String(PAGE_SIZE) });
     if (search) params.set("search", search);
+    if (categoryFilter) params.set("category", categoryFilter);
     const res = await fetch(`/api/products?${params.toString()}`);
     const data = await res.json();
     setProducts(data.products || []);
@@ -58,15 +84,35 @@ export default function AdminProductsPage() {
       .then((d) => setCategories(d.categories || []));
   }, []);
 
-  // Reset to page 1 whenever the search term changes
+  // Reset to page 1 whenever the search term or category changes
   useEffect(() => {
     setPage(1);
-  }, [search]);
+  }, [search, categoryFilter]);
 
   useEffect(() => {
     loadProducts();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, search]);
+  }, [page, search, categoryFilter]);
+
+  function showNotice(type, text) {
+    setNotice({ type, text });
+    setTimeout(() => setNotice(null), 5000);
+  }
+
+  function clearSelection() {
+    setSelected(new Set());
+    setSelectAllMatching(false);
+  }
+
+  function handleSearchChange(value) {
+    setSearch(value);
+    clearSelection(); // the old selection may no longer match what is shown
+  }
+
+  function handleCategoryChange(value) {
+    setCategoryFilter(value);
+    clearSelection();
+  }
 
   function openAdd() {
     setEditingId(null);
@@ -127,6 +173,11 @@ export default function AdminProductsPage() {
   async function handleDelete(id) {
     if (!confirm("Delete this product? This cannot be undone.")) return;
     await fetch(`/api/products/${id}`, { method: "DELETE" });
+    setSelected((prev) => {
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
     // If this was the last item on the current page, step back a page
     if (products.length === 1 && page > 1) {
       setPage((p) => p - 1);
@@ -154,12 +205,134 @@ export default function AdminProductsPage() {
     return pages;
   }
 
+  // --- Selection helpers ---
+
+  const pageIds = products.map((p) => p._id);
+  const allPageSelected = pageIds.length > 0 && (selectAllMatching || pageIds.every((id) => selected.has(id)));
+  const totalMatching = pagination?.total ?? products.length;
+  const selectedCount = selectAllMatching ? totalMatching : selected.size;
+  const categoryName = categories.find((c) => c._id === categoryFilter)?.name;
+
+  function toggleOne(id) {
+    if (selectAllMatching) {
+      // switching back to manual selection: start from the current page minus this row
+      setSelectAllMatching(false);
+      setSelected(new Set(pageIds.filter((x) => x !== id)));
+      return;
+    }
+    setSelected((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  }
+
+  function toggleAllOnPage() {
+    if (allPageSelected) {
+      if (selectAllMatching) {
+        clearSelection();
+      } else {
+        setSelected((prev) => {
+          const next = new Set(prev);
+          pageIds.forEach((id) => next.delete(id));
+          return next;
+        });
+      }
+    } else {
+      setSelected((prev) => {
+        const next = new Set(prev);
+        pageIds.forEach((id) => next.add(id));
+        return next;
+      });
+    }
+  }
+
+  // --- Bulk update ---
+
+  function buildChanges() {
+    const changes = {};
+
+    if (bulk.priceMode) {
+      const v = Number(bulk.priceValue);
+      if (bulk.priceValue === "" || !Number.isFinite(v) || v < 0) {
+        return { error: "Enter a valid number for the price change." };
+      }
+      if (bulk.priceMode === "decrease_percent" && v > 100) {
+        return { error: "A price cannot be reduced by more than 100%." };
+      }
+      changes.price = { mode: bulk.priceMode, value: v };
+    }
+    if (bulk.category) changes.category = bulk.category;
+    if (bulk.status) changes.isActive = bulk.status === "active";
+    if (bulk.featured) changes.isFeatured = bulk.featured === "yes";
+    if (bulk.unit.trim()) changes.unit = bulk.unit.trim();
+
+    if (Object.keys(changes).length === 0) {
+      return { error: "Choose at least one change to apply." };
+    }
+    return { changes };
+  }
+
+  function describeChanges(changes) {
+    const parts = [];
+    if (changes.price) {
+      parts.push(`${PRICE_MODE_LABELS[changes.price.mode]} ${changes.price.value}`.replace("Set price to ₹ ", "set price to ₹"));
+    }
+    if (changes.category) {
+      parts.push(`move to "${categories.find((c) => c._id === changes.category)?.name}"`);
+    }
+    if (changes.isActive !== undefined) parts.push(changes.isActive ? "make Active" : "make Hidden");
+    if (changes.isFeatured !== undefined) parts.push(changes.isFeatured ? "mark Featured" : "remove Featured");
+    if (changes.unit) parts.push(`set unit to "${changes.unit}"`);
+    return parts.join(", ");
+  }
+
+  async function applyBulk() {
+    const { changes, error: changeError } = buildChanges();
+    if (changeError) {
+      showNotice("error", changeError);
+      return;
+    }
+
+    const count = selectedCount;
+    const scope = selectAllMatching
+      ? `all ${count} products${categoryName ? ` in ${categoryName}` : ""}${search ? ` matching "${search}"` : ""}`
+      : `${count} selected product${count > 1 ? "s" : ""}`;
+    if (!window.confirm(`Apply to ${scope}:\n\n${describeChanges(changes)}\n\nThis cannot be undone. Continue?`)) return;
+
+    setBulkBusy(true);
+    try {
+      const res = await fetch("/api/products/bulk-update", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...(selectAllMatching
+            ? { filter: { category: categoryFilter || undefined, search: search || undefined } }
+            : { ids: [...selected] }),
+          changes,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Could not update products.");
+
+      showNotice("success", `Updated ${data.modified ?? count} product${(data.modified ?? count) === 1 ? "" : "s"}.`);
+      clearSelection();
+      setBulk(EMPTY_BULK);
+      loadProducts();
+    } catch (err) {
+      showNotice("error", err.message);
+    } finally {
+      setBulkBusy(false);
+    }
+  }
+
   // --- Export helpers ---
 
-  // Fetches every product matching the current search (no pagination limit)
+  // Fetches every product matching the current search + category (no pagination limit)
   async function fetchAllProductsForExport() {
     const params = new URLSearchParams();
     if (search) params.set("search", search);
+    if (categoryFilter) params.set("category", categoryFilter);
     // omitting `page` and `limit` makes the API return the full unpaginated list
     const res = await fetch(`/api/products?${params.toString()}`);
     const data = await res.json();
@@ -281,15 +454,27 @@ export default function AdminProductsPage() {
         <div>
           <h1 className="font-display text-2xl font-bold text-forest">Products</h1>
           <p className="mt-1 text-sm text-muted">
-            {pagination ? `${pagination.total} products total` : "Loading..."}
+            {pagination
+              ? `${pagination.total} products ${categoryName ? `in ${categoryName}` : "total"}`
+              : "Loading..."}
           </p>
         </div>
         <div className="flex flex-wrap gap-3">
+          <select
+            value={categoryFilter}
+            onChange={(e) => handleCategoryChange(e.target.value)}
+            className="rounded-full border border-gold/30 bg-white px-4 py-2 text-sm outline-none focus:border-forest"
+          >
+            <option value="">All categories</option>
+            {categories.map((c) => (
+              <option key={c._id} value={c._id}>{c.name}</option>
+            ))}
+          </select>
           <input
             type="text"
             placeholder="Search by name or SKU..."
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => handleSearchChange(e.target.value)}
             className="rounded-full border border-gold/30 bg-white px-4 py-2 text-sm outline-none focus:border-forest"
           />
           <button
@@ -325,10 +510,151 @@ export default function AdminProductsPage() {
         </div>
       </div>
 
+      {notice && (
+        <div
+          role="status"
+          className={`mt-4 rounded-lg border px-4 py-2.5 text-sm ${
+            notice.type === "success"
+              ? "border-forest/30 bg-forest/5 text-forest"
+              : "border-terracotta/40 bg-terracotta/5 text-terracotta"
+          }`}
+        >
+          {notice.text}
+        </div>
+      )}
+
+      {/* Bulk update bar - appears once products are selected */}
+      {selectedCount > 0 && (
+        <div className="mt-4 rounded-xl2 border border-forest/30 bg-champagne/50 p-4">
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <p className="text-sm font-semibold text-forest">
+              {selectedCount} product{selectedCount > 1 ? "s" : ""} selected
+              {categoryName ? ` in ${categoryName}` : ""}
+              {selectAllMatching && search ? ` matching "${search}"` : ""}
+            </p>
+            <button onClick={clearSelection} className="text-xs text-ink/60 hover:text-ink hover:underline">
+              Clear selection
+            </button>
+          </div>
+
+          {/* Offer to extend the selection beyond the current page */}
+          {!selectAllMatching && allPageSelected && pagination && pagination.total > products.length && (
+            <p className="mt-2 text-xs text-ink/70">
+              All {products.length} products on this page are selected.{" "}
+              <button
+                onClick={() => setSelectAllMatching(true)}
+                className="font-semibold text-forest hover:underline"
+              >
+                Select all {pagination.total} products{categoryName ? ` in ${categoryName}` : ""}
+                {search ? ` matching "${search}"` : ""}
+              </button>
+            </p>
+          )}
+
+          <div className="mt-3 flex flex-wrap items-end gap-4">
+            <label className="text-xs font-medium text-muted">
+              Price
+              <div className="mt-1 flex items-center gap-2">
+                <select
+                  value={bulk.priceMode}
+                  onChange={(e) => setBulk({ ...bulk, priceMode: e.target.value })}
+                  className="rounded-lg border border-gold/30 bg-white px-2 py-1.5 text-sm text-ink outline-none focus:border-forest"
+                >
+                  <option value="">No change</option>
+                  {Object.entries(PRICE_MODE_LABELS).map(([key, label]) => (
+                    <option key={key} value={key}>{label}</option>
+                  ))}
+                </select>
+                {bulk.priceMode && (
+                  <input
+                    type="number"
+                    min="0"
+                    step="any"
+                    placeholder="Value"
+                    value={bulk.priceValue}
+                    onChange={(e) => setBulk({ ...bulk, priceValue: e.target.value })}
+                    className="w-24 rounded-lg border border-gold/30 bg-white px-2 py-1.5 text-sm text-ink outline-none focus:border-forest"
+                  />
+                )}
+              </div>
+            </label>
+
+            <label className="text-xs font-medium text-muted">
+              Move to category
+              <select
+                value={bulk.category}
+                onChange={(e) => setBulk({ ...bulk, category: e.target.value })}
+                className="mt-1 block rounded-lg border border-gold/30 bg-white px-2 py-1.5 text-sm text-ink outline-none focus:border-forest"
+              >
+                <option value="">No change</option>
+                {categories.map((c) => (
+                  <option key={c._id} value={c._id}>{c.name}</option>
+                ))}
+              </select>
+            </label>
+
+            <label className="text-xs font-medium text-muted">
+              Status
+              <select
+                value={bulk.status}
+                onChange={(e) => setBulk({ ...bulk, status: e.target.value })}
+                className="mt-1 block rounded-lg border border-gold/30 bg-white px-2 py-1.5 text-sm text-ink outline-none focus:border-forest"
+              >
+                <option value="">No change</option>
+                <option value="active">Active (visible)</option>
+                <option value="hidden">Hidden</option>
+              </select>
+            </label>
+
+            <label className="text-xs font-medium text-muted">
+              Featured
+              <select
+                value={bulk.featured}
+                onChange={(e) => setBulk({ ...bulk, featured: e.target.value })}
+                className="mt-1 block rounded-lg border border-gold/30 bg-white px-2 py-1.5 text-sm text-ink outline-none focus:border-forest"
+              >
+                <option value="">No change</option>
+                <option value="yes">Featured</option>
+                <option value="no">Not featured</option>
+              </select>
+            </label>
+
+            <label className="text-xs font-medium text-muted">
+              Unit
+              <input
+                type="text"
+                placeholder="No change"
+                value={bulk.unit}
+                onChange={(e) => setBulk({ ...bulk, unit: e.target.value })}
+                className="mt-1 block w-28 rounded-lg border border-gold/30 bg-white px-2 py-1.5 text-sm text-ink outline-none focus:border-forest"
+              />
+            </label>
+
+            <button
+              onClick={applyBulk}
+              disabled={bulkBusy}
+              className="rounded-full bg-forest px-5 py-2 text-xs font-semibold text-ivory hover:bg-forest-light disabled:opacity-40"
+            >
+              {bulkBusy ? "Updating..." : `Update ${selectedCount} product${selectedCount > 1 ? "s" : ""}`}
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="mt-6 overflow-x-auto rounded-xl2 border border-gold/15 bg-white shadow-card">
         <table className="w-full text-left text-sm">
           <thead className="border-b border-gold/15 bg-champagne/50 text-xs uppercase tracking-wide text-muted">
             <tr>
+              <th className="w-10 px-4 py-3">
+                <input
+                  type="checkbox"
+                  aria-label="Select all products on this page"
+                  checked={allPageSelected}
+                  onChange={toggleAllOnPage}
+                  disabled={products.length === 0}
+                  className="h-4 w-4 accent-forest"
+                />
+              </th>
               <th className="px-4 py-3">SKU</th>
               <th className="px-4 py-3">Product</th>
               <th className="px-4 py-3">Category</th>
@@ -340,54 +666,69 @@ export default function AdminProductsPage() {
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={7} className="px-4 py-8 text-center text-muted">Loading...</td></tr>
+              <tr><td colSpan={8} className="px-4 py-8 text-center text-muted">Loading...</td></tr>
             ) : products.length === 0 ? (
-              <tr><td colSpan={7} className="px-4 py-8 text-center text-muted">
-                {search ? "No products match your search." : "No products yet. Add your first product."}
+              <tr><td colSpan={8} className="px-4 py-8 text-center text-muted">
+                {search || categoryFilter ? "No products match your filters." : "No products yet. Add your first product."}
               </td></tr>
             ) : (
-              products.map((p) => (
-                <tr key={p._id} className="border-b border-gold/10 last:border-0">
-                  <td className="px-4 py-3 font-mono text-xs text-ink/70">{p.sku}</td>
-                  <td className="flex items-center gap-3 px-4 py-3">
-                    <div className="h-10 w-10 overflow-hidden rounded-lg bg-champagne">
-                     {p.media?.[0] &&
-                        (p.media[0].type === "video" ? (
-                          <video
-                            src={p.media[0].url}
-                            className="h-full w-full object-cover"
-                            muted
-                          />
-                        ) : (
-                          <Image
-                            src={p.media[0].url}
-                            alt=""
-                            width={40}
-                            height={40}
-                            className="h-full w-full object-cover"
-                          />
-                        ))}
-                    </div>
-                    <span className="font-medium text-ink">{p.name}</span>
-                  </td>
-                  <td className="px-4 py-3 text-ink/70">{p.category?.name}</td>
-                  <td className="px-4 py-3 text-ink/70">₹{p.price}</td>
-                  <td className="px-4 py-3">
-                    <span className={p.stock <= p.lowStockThreshold ? "font-semibold text-terracotta" : "text-ink/70"}>
-                      {p.stock}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3">
-                    <span className={`rounded-full px-3 py-1 text-xs font-medium ${p.isActive ? "bg-forest/10 text-forest" : "bg-muted/10 text-muted"}`}>
-                      {p.isActive ? "Active" : "Hidden"}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    <button onClick={() => openEdit(p)} className="mr-3 text-xs font-semibold text-forest hover:underline">Edit</button>
-                    <button onClick={() => handleDelete(p._id)} className="text-xs font-semibold text-terracotta hover:underline">Delete</button>
-                  </td>
-                </tr>
-              ))
+              products.map((p) => {
+                const isSelected = selectAllMatching || selected.has(p._id);
+                return (
+                  <tr
+                    key={p._id}
+                    className={`border-b border-gold/10 last:border-0 ${isSelected ? "bg-champagne/40" : ""}`}
+                  >
+                    <td className="px-4 py-3">
+                      <input
+                        type="checkbox"
+                        aria-label={`Select ${p.name}`}
+                        checked={isSelected}
+                        onChange={() => toggleOne(p._id)}
+                        className="h-4 w-4 accent-forest"
+                      />
+                    </td>
+                    <td className="px-4 py-3 font-mono text-xs text-ink/70">{p.sku}</td>
+                    <td className="flex items-center gap-3 px-4 py-3">
+                      <div className="h-10 w-10 overflow-hidden rounded-lg bg-champagne">
+                        {p.media?.[0] &&
+                          (p.media[0].type === "video" ? (
+                            <video
+                              src={p.media[0].url}
+                              className="h-full w-full object-cover"
+                              muted
+                            />
+                          ) : (
+                            <Image
+                              src={p.media[0].url}
+                              alt=""
+                              width={40}
+                              height={40}
+                              className="h-full w-full object-cover"
+                            />
+                          ))}
+                      </div>
+                      <span className="font-medium text-ink">{p.name}</span>
+                    </td>
+                    <td className="px-4 py-3 text-ink/70">{p.category?.name}</td>
+                    <td className="px-4 py-3 text-ink/70">₹{p.price}</td>
+                    <td className="px-4 py-3">
+                      <span className={p.stock <= p.lowStockThreshold ? "font-semibold text-terracotta" : "text-ink/70"}>
+                        {p.stock}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className={`rounded-full px-3 py-1 text-xs font-medium ${p.isActive ? "bg-forest/10 text-forest" : "bg-muted/10 text-muted"}`}>
+                        {p.isActive ? "Active" : "Hidden"}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <button onClick={() => openEdit(p)} className="mr-3 text-xs font-semibold text-forest hover:underline">Edit</button>
+                      <button onClick={() => handleDelete(p._id)} className="text-xs font-semibold text-terracotta hover:underline">Delete</button>
+                    </td>
+                  </tr>
+                );
+              })
             )}
           </tbody>
         </table>
@@ -486,16 +827,16 @@ export default function AdminProductsPage() {
 
           <label className="block">
             <span className="mb-1 block text-xs font-semibold text-ink/70">Product Images / Videos</span>
-              <MediaUploader
-                media={form.media}
-                onChange={(media) =>
-                  setForm({
-                    ...form,
-                    media,
-                  })
-                }
-              />          
-              </label>
+            <MediaUploader
+              media={form.media}
+              onChange={(media) =>
+                setForm({
+                  ...form,
+                  media,
+                })
+              }
+            />
+          </label>
 
           <div className="flex gap-6">
             <label className="flex items-center gap-2 text-sm">
