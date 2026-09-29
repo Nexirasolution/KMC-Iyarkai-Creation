@@ -35,6 +35,28 @@ function toWhatsAppLink(phone, text) {
   return `https://wa.me/${number}${text ? `?text=${encodeURIComponent(text)}` : ""}`;
 }
 
+// Order date / time helpers. Times are shown in Indian Standard Time so the
+// admin always sees the same time regardless of their device's timezone.
+const IST = "Asia/Kolkata";
+
+function formatOrderDate(value, withYear = false) {
+  return new Date(value).toLocaleDateString("en-IN", {
+    day: "numeric",
+    month: "short",
+    ...(withYear ? { year: "numeric" } : {}),
+    timeZone: IST,
+  });
+}
+
+function formatOrderTime(value) {
+  return new Date(value).toLocaleTimeString("en-IN", {
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+    timeZone: IST,
+  });
+}
+
 // Builds the message shown to the admin before sending. Edit the wording here.
 function buildWhatsAppMessage(order) {
   if (!order) return "";
@@ -405,8 +427,9 @@ export default function AdminOrdersPage() {
                       {o.paymentStatus || "pending"}
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-ink/70">
-                    {new Date(o.createdAt).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}
+                  <td className="whitespace-nowrap px-4 py-3 text-ink/70">
+                    <p>{formatOrderDate(o.createdAt)}</p>
+                    <p className="text-xs text-muted">{formatOrderTime(o.createdAt)}</p>
                   </td>
                   <td className="px-4 py-3 text-right">
                     <div className="flex justify-end gap-3">
@@ -491,7 +514,7 @@ export default function AdminOrdersPage() {
 
                 <div className="mt-3 flex items-center justify-between border-t border-gold/10 pt-3 text-sm">
                   <span className="text-muted">
-                    {new Date(o.createdAt).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}
+                    {formatOrderDate(o.createdAt)}, {formatOrderTime(o.createdAt)}
                   </span>
                   <span className="font-semibold text-forest">₹{o.total}</span>
                 </div>
@@ -527,6 +550,13 @@ export default function AdminOrdersPage() {
       <Modal open={!!selected} onClose={closeModal} title={selected?.orderNumber || ""} wide>
         {selected && (
           <div>
+            <p className="mb-4 text-sm text-ink/70">
+              Placed on{" "}
+              <span className="font-medium text-ink">
+                {formatOrderDate(selected.createdAt, true)} at {formatOrderTime(selected.createdAt)}
+              </span>
+            </p>
+
             <div className="grid gap-4 sm:grid-cols-2">
               <div>
                 <p className="text-xs font-semibold uppercase text-muted">Customer</p>
