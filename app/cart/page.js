@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useCart } from "@/context/CartContext";
@@ -10,11 +11,29 @@ import Footer from "@/components/Footer";
 export default function CartPage() {
   const { items, updateQuantity, removeItem, subtotal, hydrated } = useCart();
 
+  // The Navbar reads the store settings (name, contact info, etc.), so load
+  // them here and pass them in, the same way the checkout page does.
+  const [settings, setSettings] = useState({
+    shippingFee: 49,
+    freeShipping: 999,
+    stateShippingRates: [],
+    storeName: "KMC Iyarkai Creation",
+  });
+
+  useEffect(() => {
+    fetch("/api/settings")
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.settings) setSettings(data.settings);
+      })
+      .catch(() => {});
+  }, []);
+
   if (!hydrated) return null;
 
   return (
     <>
-      <Navbar  />
+      <Navbar settings={settings} />
 
       <section className="mx-auto max-w-5xl px-5 py-12 md:px-8">
         <h1 className="font-display text-3xl font-bold text-forest">Your Cart</h1>
