@@ -3,6 +3,7 @@ import { connectDB } from "@/lib/mongodb";
 import Product from "@/models/Product";
 import "@/models/Category";
 import { getCategoryAndDescendantIds } from "@/lib/categoryTree";
+import { normalizeWeight } from "@/lib/weight";
 
 function slugify(text) {
   return text
@@ -149,6 +150,8 @@ export async function POST(req) {
         sku,
         slug,
         media: normalizeMedia(body.media),
+        // Optional: undefined means the model default (no weight) applies
+        weight: normalizeWeight(body.weight),
       });
       return NextResponse.json({ product }, { status: 201 });
     } catch (err) {

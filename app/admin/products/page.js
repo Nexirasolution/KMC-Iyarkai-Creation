@@ -8,6 +8,7 @@ import BulkUploadModal from "@/components/BulkUploadModal";
 import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
+import { formatWeight } from "@/lib/weight";
 
 const EMPTY_FORM = {
   name: "",
@@ -16,6 +17,8 @@ const EMPTY_FORM = {
   price: "",
   compareAtPrice: "",
   unit: "piece",
+  weightValue: "", // optional
+  weightUnit: "g",
   stock: 0,
   lowStockThreshold: 5,
   description: "",
@@ -130,6 +133,8 @@ export default function AdminProductsPage() {
       price: p.price,
       compareAtPrice: p.compareAtPrice || "",
       unit: p.unit,
+      weightValue: p.weight?.value > 0 ? p.weight.value : "",
+      weightUnit: p.weight?.unit || "g",
       stock: p.stock,
       lowStockThreshold: p.lowStockThreshold,
       description: p.description || "",
@@ -146,13 +151,20 @@ export default function AdminProductsPage() {
     setSaving(true);
     setError("");
     try {
+      // weightValue / weightUnit are form-only fields; the API expects a `weight` object.
+      // Blank weight is sent as value 0, which means "not set" (and clears it on edit).
+      const { weightValue, weightUnit, ...rest } = form;
       const payload = {
-        ...form,
+        ...rest,
         sku: form.sku.trim().toUpperCase(),
         price: Number(form.price),
         compareAtPrice: Number(form.compareAtPrice) || 0,
         stock: Number(form.stock),
         lowStockThreshold: Number(form.lowStockThreshold),
+        weight: {
+          value: weightValue === "" ? 0 : Number(weightValue),
+          unit: weightUnit,
+        },
       };
       const res = await fetch(editingId ? `/api/products/${editingId}` : "/api/products", {
         method: editingId ? "PUT" : "POST",
@@ -347,6 +359,7 @@ export default function AdminProductsPage() {
       Price: p.price,
       "Compare Price": p.compareAtPrice || 0,
       Unit: p.unit,
+      Weight: formatWeight(p.weight) || "",
       Stock: p.stock,
       "Low Stock Threshold": p.lowStockThreshold,
       Status: p.isActive ? "Active" : "Hidden",
@@ -374,6 +387,7 @@ export default function AdminProductsPage() {
         { wch: 10 }, // Price
         { wch: 14 }, // Compare Price
         { wch: 10 }, // Unit
+        { wch: 10 }, // Weight
         { wch: 8 },  // Stock
         { wch: 10 }, // Low Stock Threshold
         { wch: 10 }, // Status
@@ -420,12 +434,13 @@ export default function AdminProductsPage() {
 
       autoTable(doc, {
         startY: 36,
-        head: [["SKU", "Name", "Category", "Price (₹)", "Stock", "Status", "Featured"]],
+        head: [["SKU", "Name", "Category", "Price (₹)", "Weight", "Stock", "Status", "Featured"]],
         body: list.map((p) => [
           p.sku,
           p.name,
           p.category?.name || "-",
           p.price,
+          formatWeight(p.weight) || "-",
           p.stock,
           p.isActive ? "Active" : "Hidden",
           p.isFeatured ? "Yes" : "No",
@@ -659,6 +674,7 @@ export default function AdminProductsPage() {
               <th className="px-4 py-3">Product</th>
               <th className="px-4 py-3">Category</th>
               <th className="px-4 py-3">Price</th>
+              <th className="px-4 py-3">Weight</th>
               <th className="px-4 py-3">Stock</th>
               <th className="px-4 py-3">Status</th>
               <th className="px-4 py-3 text-right">Actions</th>
@@ -666,9 +682,9 @@ export default function AdminProductsPage() {
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={8} className="px-4 py-8 text-center text-muted">Loading...</td></tr>
+              <tr><td colSpan={9} className="px-4 py-8 text-center text-muted">Loading...</td></tr>
             ) : products.length === 0 ? (
-              <tr><td colSpan={8} className="px-4 py-8 text-center text-muted">
+              <tr><td colSpan={9} className="px-4 py-8 text-center text-muted">
                 {search || categoryFilter ? "No products match your filters." : "No products yet. Add your first product."}
               </td></tr>
             ) : (
@@ -712,6 +728,7 @@ export default function AdminProductsPage() {
                     </td>
                     <td className="px-4 py-3 text-ink/70">{p.category?.name}</td>
                     <td className="px-4 py-3 text-ink/70">₹{p.price}</td>
+                    <td className="px-4 py-3 text-ink/70">{formatWeight(p.weight) || "—"}</td>
                     <td className="px-4 py-3">
                       <span className={p.stock <= p.lowStockThreshold ? "font-semibold text-terracotta" : "text-ink/70"}>
                         {p.stock}
@@ -813,6 +830,30 @@ export default function AdminProductsPage() {
             <FormField label="Compare Price" type="number" value={form.compareAtPrice} onChange={(v) => setForm({ ...form, compareAtPrice: v })} />
             <FormField label="Unit" value={form.unit} onChange={(v) => setForm({ ...form, unit: v })} placeholder="e.g. 500 ml" />
             <FormField label="Stock" required type="number" value={form.stock} onChange={(v) => setForm({ ...form, stock: v })} />
+          </div>
+
+          {/* Optional weight */}
+          <div>
+            <span className="mb-1 block text-xs font-semibold text-ink/70">Weight (optional)</span>
+            <div className="flex max-w-xs gap-2">
+              <input
+                type="number"
+                min="0"
+                step="any"
+                placeholder="e.g. 250"
+                value={form.weightValue}
+                onChange={(e) => setForm({ ...form, weightValue: e.target.value })}
+                className="w-full rounded-xl border border-gold/30 px-4 py-2.5 text-sm outline-none focus:border-forest"
+              />
+              <select
+                value={form.weightUnit}
+                onChange={(e) => setForm({ ...form, weightUnit: e.target.value })}
+                className="rounded-xl border border-gold/30 bg-white px-3 py-2.5 text-sm outline-none focus:border-forest"
+              >
+                <option value="g">g</option>
+                <option value="kg">kg</option>
+              </select>
+            </div>
           </div>
 
           <label className="block">

@@ -12,6 +12,7 @@ import ProductAccordion from "@/components/ProductAccordion";
 import RelatedProducts from "@/components/RelatedProducts";
 import BackButton from "@/components/BackButton";
 import { getSettings } from "@/lib/settings";
+import { formatWeight } from "@/lib/weight";
 
 export const dynamic = "force-dynamic";
 
@@ -42,6 +43,7 @@ export default async function ProductDetailPage({ params }) {
   const related = await getRelatedProducts(product);
   const settings = await getSettings();
   const media = product.media || [];
+  const weightLabel = formatWeight(product.weight); // null when not set
 
   const accordionItems = [
     {
@@ -55,6 +57,7 @@ export default async function ProductDetailPage({ params }) {
       title: "Product Details",
       content: (
         <div className="flex flex-wrap gap-2">
+          {weightLabel && <Tag label={`Weight: ${weightLabel}`} />}
           {product.attributes?.handmade && <Tag label="Handmade with Care" />}
           {product.attributes?.natural && <Tag label="100% Natural" />}
           {product.attributes?.ecoFriendly && <Tag label="Eco-Friendly" />}
@@ -97,6 +100,12 @@ export default async function ProductDetailPage({ params }) {
               <span className="text-sm text-muted">/ {product.unit}</span>
             </div>
 
+            {weightLabel && (
+              <p className="mt-2 text-sm text-muted">
+                Weight: <span className="font-semibold text-forest">{weightLabel}</span>
+              </p>
+            )}
+
             <ProductDetailActions product={product} />
           </div>
         </div>
@@ -105,7 +114,7 @@ export default async function ProductDetailPage({ params }) {
         <ProductAccordion items={accordionItems} />
       </section>
 
-     <RelatedProducts products={related} categoryId={product.category?._id} />
+      <RelatedProducts products={related} categoryId={product.category?._id} />
 
       <Footer />
     </>

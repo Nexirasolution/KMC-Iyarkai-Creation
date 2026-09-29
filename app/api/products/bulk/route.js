@@ -3,6 +3,7 @@ import * as XLSX from "xlsx";
 import { connectDB } from "@/lib/mongodb";
 import Product from "@/models/Product";
 import Category from "@/models/Category";
+import { WEIGHT_UNITS } from "@/lib/weight";
 
 function slugify(text) {
   return text
@@ -105,6 +106,23 @@ export async function POST(req) {
         return;
       }
 
+      // Optional weight: columns `weight` and `weightUnit` (g / kg)
+      const weightValue = toNumber(row.weight, 0);
+      const weightUnit = String(row.weightUnit || "g").trim().toLowerCase() || "g";
+      if (Number.isNaN(weightValue) || weightValue < 0) {
+        results.push({ row: rowNum, name, status: "error", message: "Weight must be a positive number." });
+        return;
+      }
+      if (weightValue > 0 && !WEIGHT_UNITS.includes(weightUnit)) {
+        results.push({
+          row: rowNum,
+          name,
+          status: "error",
+          message: `Weight unit must be one of: ${WEIGHT_UNITS.join(", ")}.`,
+        });
+        return;
+      }
+
       let slug = slugify(name);
       if (existingSlugs.has(slug)) {
         slug = `${slug}-${Date.now().toString().slice(-5)}-${idx}`;
@@ -120,6 +138,10 @@ export async function POST(req) {
         price,
         compareAtPrice: toNumber(row.compareAtPrice, 0),
         unit: String(row.unit || "piece").trim() || "piece",
+        weight: {
+          value: weightValue,
+          unit: WEIGHT_UNITS.includes(weightUnit) ? weightUnit : "g",
+        },
         stock: toNumber(row.stock, 0),
         lowStockThreshold: toNumber(row.lowStockThreshold, 5),
         description: String(row.description || "").trim(),

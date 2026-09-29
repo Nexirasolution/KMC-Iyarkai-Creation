@@ -3,6 +3,7 @@ import { connectDB } from "@/lib/mongodb";
 import Product from "@/models/Product";
 import "@/models/Category";
 import { deleteMediaFromCloudinary } from "@/lib/cloudinary";
+import { normalizeWeight } from "@/lib/weight";
 
 function normalizeMedia(media) {
   if (!Array.isArray(media)) return undefined;
@@ -36,6 +37,11 @@ export async function PUT(req, { params }) {
 
     if (body.media) {
       body.media = normalizeMedia(body.media);
+    }
+
+    // Optional weight. Sending { value: 0 } (or blank) clears it.
+    if (body.weight !== undefined) {
+      body.weight = normalizeWeight(body.weight);
     }
 
     if (body.sku !== undefined) {

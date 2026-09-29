@@ -41,6 +41,12 @@ const ProductSchema = new mongoose.Schema(
     compareAtPrice: { type: Number, default: 0 },
     unit: { type: String, default: "piece" },
 
+    // Optional product weight. value 0 = "not set".
+    weight: {
+      value: { type: Number, default: 0, min: 0 },
+      unit: { type: String, enum: ["g", "kg"], default: "g" },
+    },
+
     // Images + Videos
     media: {
       type: [MediaSchema],
