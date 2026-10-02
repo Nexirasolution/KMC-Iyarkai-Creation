@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
+import { formatWeight, orderTotalGrams } from "@/lib/weight";
 
 export default function ShippingLabelSheetPage() {
   const { id } = useParams();
@@ -91,6 +92,8 @@ export default function ShippingLabelSheetPage() {
     );
   }
 
+  const totalGrams = orderTotalGrams(order.items);
+
   return (
     <div className="min-h-screen bg-champagne/40 px-4 py-6 sm:px-6">
       {/* Screen-only controls, hidden when printing */}
@@ -142,11 +145,12 @@ export default function ShippingLabelSheetPage() {
           )}
           {settings?.phone && <p className="mt-1 text-sm text-ink/80">Phone: {settings.phone}</p>}
 
-          <div className="mt-8 flex items-center gap-3 text-xs text-muted">
+          <div className="mt-8 flex flex-wrap items-center gap-3 text-xs text-muted">
             <span className="rounded border border-ink/40 px-2 py-0.5 font-semibold uppercase">
               {order.paymentMethod}
             </span>
             <span>Order {order.orderNumber}</span>
+            {totalGrams > 0 && <span>Weight: {formatWeight(totalGrams)}</span>}
           </div>
         </div>
       </div>

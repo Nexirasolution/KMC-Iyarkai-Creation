@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import Modal from "@/components/Modal";
+import { toGrams, formatWeight, orderTotalGrams, itemsMissingWeight } from "@/lib/weight";
 
 // Return steps are normal order statuses, so they show to the customer on the
 // Track Order page exactly like packed / shipped.
@@ -43,9 +44,9 @@ const PAYMENT_STATUS_COLORS = {
   failed: "bg-terracotta/10 text-terracotta",
 };
 
-// Courier and tracking URL are configured once in Settings. The admin only
-// enters the tracking ID per order.
-const EMPTY_TRACKING = { trackingNumber: "" };
+// Courier partners and their tracking URL templates are configured in
+// Settings. The admin picks a courier and enters the tracking ID per order.
+const EMPTY_TRACKING = { courier: "", trackingNumber: "" };
 
 // Builds a wa.me link from a phone number, optionally with a pre-filled message.
 // Assumes bare 10-digit numbers are Indian mobile numbers missing the country
@@ -176,7 +177,7 @@ export default function AdminOrdersPage() {
   const [tracking, setTracking] = useState(EMPTY_TRACKING);
   const [toast, setToast] = useState(null);
 
-  // Store-wide courier / tracking URL template, configured in Settings.
+  // Store-wide courier partners, configured in Settings.
   const [storeSettings, setStoreSettings] = useState(null);
 
   const [showCancelForm, setShowCancelForm] = useState(false);
@@ -216,7 +217,7 @@ export default function AdminOrdersPage() {
     loadOrders();
   }, [filter]);
 
-  // Load the store's courier / tracking URL settings once.
+  // Load the store's courier partners once.
   useEffect(() => {
     fetch("/api/settings")
       .then((r) => r.json())
@@ -224,9 +225,22 @@ export default function AdminOrdersPage() {
       .catch(() => {});
   }, []);
 
+  // Courier list for the dropdown. Falls back to the legacy single courier
+  // if no couriers have been added in Settings yet.
+  const courierOptions =
+    storeSettings?.couriers?.length > 0
+      ? storeSettings.couriers
+      : storeSettings?.courier
+      ? [{ name: storeSettings.courier, trackingUrlTemplate: storeSettings.trackingUrlTemplate || "" }]
+      : [];
+
   useEffect(() => {
     if (selected) {
       setTracking({
+        // Pre-select the saved courier; auto-pick if only one exists.
+        courier:
+          selected.tracking?.courier ||
+          (courierOptions.length === 1 ? courierOptions[0].name : ""),
         trackingNumber: selected.tracking?.trackingNumber || "",
       });
       setRefundAmount(selected.refund?.amount ? String(selected.refund.amount) : String(selected.total || ""));
@@ -247,7 +261,21 @@ export default function AdminOrdersPage() {
     setReturnReason("");
     setReturnRefund(null);
     setShowDeleteConfirm(false);
-  }, [selected]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected, storeSettings]);
+
+  // Opens the modal immediately with the list data, then loads the full order
+  // (which includes each item's product weight) and swaps it in.
+  async function openOrder(o) {
+    setSelected(o);
+    try {
+      const res = await fetch(`/api/orders/${o._id}`);
+      const data = await res.json();
+      if (res.ok) setSelected(data.order);
+    } catch {
+      // keep showing the list data if the detail fetch fails
+    }
+  }
 
   function closeModal() {
     setSelected(null);
@@ -344,12 +372,25 @@ export default function AdminOrdersPage() {
 
   async function saveTracking() {
     if (!selected) return;
+    if (!tracking.courier) {
+      showToast("Choose a courier partner", "error");
+      return;
+    }
+    if (!tracking.trackingNumber.trim()) {
+      showToast("Enter the tracking ID", "error");
+      return;
+    }
     setUpdating(true);
     const res = await fetch(`/api/orders/${selected._id}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      // Only the tracking ID is sent; the server adds courier + URL from Settings.
-      body: JSON.stringify({ tracking: { trackingNumber: tracking.trackingNumber } }),
+      // The server builds the tracking link from the chosen courier's URL in Settings.
+      body: JSON.stringify({
+        tracking: {
+          courier: tracking.courier,
+          trackingNumber: tracking.trackingNumber.trim(),
+        },
+      }),
     });
     const data = await res.json();
     setUpdating(false);
@@ -408,12 +449,17 @@ export default function AdminOrdersPage() {
     }
   }
 
-  const filtered = orders.filter(
-    (o) =>
-      o.orderNumber.toLowerCase().includes(search.toLowerCase()) ||
-      o.customer.phone.includes(search) ||
-      o.customer.name.toLowerCase().includes(search.toLowerCase())
-  );
+  // Search by order #, customer phone, customer name, or tracking ID.
+  const filtered = orders.filter((o) => {
+    const q = search.trim().toLowerCase();
+    if (!q) return true;
+    return (
+      (o.orderNumber || "").toLowerCase().includes(q) ||
+      (o.customer?.phone || "").includes(q) ||
+      (o.customer?.name || "").toLowerCase().includes(q) ||
+      (o.tracking?.trackingNumber || "").toLowerCase().includes(q)
+    );
+  });
 
   const isOnlinePaid =
     selected?.paymentMethod === "Online" &&
@@ -421,6 +467,10 @@ export default function AdminOrdersPage() {
     !!selected?.razorpay?.paymentId;
 
   const notifyActive = !!selected && notifyFor?.id === selected._id;
+
+  // Total parcel weight for the order open in the modal
+  const totalWeightGrams = orderTotalGrams(selected?.items);
+  const missingWeightCount = itemsMissingWeight(selected?.items);
 
   const showRefundSection =
     selected?.status === "cancelled" ||
@@ -437,10 +487,10 @@ export default function AdminOrdersPage() {
         </div>
         <input
           type="text"
-          placeholder="Search by name, phone, order #..."
+          placeholder="Search by name, phone, order #, tracking ID..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          className="w-full rounded-full border border-gold/30 bg-white px-4 py-2 text-sm outline-none focus:border-forest sm:w-72"
+          className="w-full rounded-full border border-gold/30 bg-white px-4 py-2 text-sm outline-none focus:border-forest sm:w-80"
         />
       </div>
 
@@ -536,7 +586,7 @@ export default function AdminOrdersPage() {
                       >
                         Full-sheet label
                       </Link>
-                      <button onClick={() => setSelected(o)} className="text-xs font-semibold text-forest hover:underline">
+                      <button onClick={() => openOrder(o)} className="text-xs font-semibold text-forest hover:underline">
                         View
                       </button>
                     </div>
@@ -558,11 +608,11 @@ export default function AdminOrdersPage() {
           filtered.map((o) => (
             <div key={o._id} className="rounded-2xl border border-gold/15 bg-white p-4 shadow-card">
               <div
-                onClick={() => setSelected(o)}
+                onClick={() => openOrder(o)}
                 role="button"
                 tabIndex={0}
                 onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") setSelected(o);
+                  if (e.key === "Enter" || e.key === " ") openOrder(o);
                 }}
                 className="block w-full cursor-pointer text-left"
               >
@@ -692,6 +742,13 @@ export default function AdminOrdersPage() {
                     <p className="mt-0.5 text-xs text-muted">
                       {item.sku ? `SKU: ${item.sku}` : "SKU: —"} · Qty {item.quantity}
                     </p>
+                    <p className="mt-0.5 text-xs text-muted">
+                      {toGrams(item.weight)
+                        ? `Weight: ${formatWeight(toGrams(item.weight))} each · ${formatWeight(
+                            toGrams(item.weight) * item.quantity
+                          )} total`
+                        : "Weight: not set"}
+                    </p>
                   </div>
                   <span className="shrink-0 self-start text-ink">₹{item.price * item.quantity}</span>
                 </div>
@@ -701,6 +758,17 @@ export default function AdminOrdersPage() {
               <span>Total ({selected.paymentMethod})</span>
               <span>₹{selected.total}</span>
             </div>
+
+            <div className="mt-2 flex justify-between gap-3 text-sm text-ink/80">
+              <span className="font-medium">Total weight</span>
+              <span className="font-semibold text-ink">{formatWeight(totalWeightGrams)}</span>
+            </div>
+            {missingWeightCount > 0 && (
+              <p className="mt-1 text-xs text-gold-dark">
+                {missingWeightCount} item{missingWeightCount > 1 ? "s have" : " has"} no weight set, so
+                the total may be lower than the actual parcel weight.
+              </p>
+            )}
 
             <div className="leaf-divider my-5" />
 
@@ -899,7 +967,7 @@ export default function AdminOrdersPage() {
                 </button>
                 {selected.status === "shipped" && !selected.tracking?.trackingNumber && (
                   <span className="text-xs text-gold-dark">
-                    Tip: save the tracking ID below first to include it in the message.
+                    Tip: save the courier and tracking ID below first to include them in the message.
                   </span>
                 )}
               </div>
@@ -1037,19 +1105,31 @@ export default function AdminOrdersPage() {
               Shown to the customer on the Track Order page once saved.
             </p>
 
-            {!storeSettings?.courier && (
+            {courierOptions.length === 0 && (
               <p className="mt-2 text-xs text-gold-dark">
-                No courier is set yet. Add the courier name and tracking URL in{" "}
+                No courier partners yet. Add them in{" "}
                 <Link href="/admin/settings" className="font-semibold underline">Settings</Link>.
               </p>
             )}
 
             <div className="mt-3 grid gap-3 sm:grid-cols-2">
               <div>
-                <label className="text-xs font-medium text-ink/70">Courier</label>
-                <p className="mt-1 rounded-full border border-gold/20 bg-champagne/40 px-4 py-2 text-sm text-ink/70">
-                  {selected.tracking?.courier || storeSettings?.courier || "—"}
-                </p>
+                <label className="text-xs font-medium text-ink/70">Courier partner</label>
+                <select
+                  value={tracking.courier}
+                  onChange={(e) => setTracking((t) => ({ ...t, courier: e.target.value }))}
+                  className="mt-1 w-full rounded-full border border-gold/30 bg-white px-4 py-2 text-sm outline-none focus:border-forest"
+                >
+                  <option value="">Select courier</option>
+                  {courierOptions.map((c) => (
+                    <option key={c.name} value={c.name}>{c.name}</option>
+                  ))}
+                  {/* Keep a previously saved courier selectable even if it was later removed from Settings */}
+                  {tracking.courier &&
+                    !courierOptions.some((c) => c.name === tracking.courier) && (
+                      <option value={tracking.courier}>{tracking.courier}</option>
+                    )}
+                </select>
               </div>
               <div>
                 <label className="text-xs font-medium text-ink/70">Tracking ID / AWB number</label>
@@ -1057,7 +1137,7 @@ export default function AdminOrdersPage() {
                   type="text"
                   placeholder="e.g. 1234567890"
                   value={tracking.trackingNumber}
-                  onChange={(e) => setTracking({ trackingNumber: e.target.value })}
+                  onChange={(e) => setTracking((t) => ({ ...t, trackingNumber: e.target.value }))}
                   className="mt-1 w-full rounded-full border border-gold/30 bg-white px-4 py-2 text-sm outline-none focus:border-forest"
                 />
               </div>

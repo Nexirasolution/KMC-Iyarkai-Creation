@@ -13,8 +13,7 @@ const DEFAULT_SETTINGS = {
   freeShipping: "999",
   stateShippingRates: [],
   deliveryTime: "2-4 Days",
-  courier: "",
-  trackingUrlTemplate: "",
+  couriers: [],
   instagram: "",
   facebook: "",
   youtube: "",
@@ -34,14 +33,23 @@ export default function SettingsPage() {
       const res = await fetch("/api/settings");
       const data = await res.json();
       if (data.settings) {
+        const s = data.settings;
+        // Couriers list; if none yet, migrate the old single courier.
+        let couriers = (s.couriers || []).map((c) => ({
+          name: c.name,
+          trackingUrlTemplate: c.trackingUrlTemplate || "",
+        }));
+        if (couriers.length === 0 && s.courier) {
+          couriers = [{ name: s.courier, trackingUrlTemplate: s.trackingUrlTemplate || "" }];
+        }
+
         setSettings({
           ...DEFAULT_SETTINGS,
-          ...data.settings,
-          shippingFee: String(data.settings.shippingFee ?? "49"),
-          freeShipping: String(data.settings.freeShipping ?? "999"),
-          courier: data.settings.courier || "",
-          trackingUrlTemplate: data.settings.trackingUrlTemplate || "",
-          stateShippingRates: (data.settings.stateShippingRates || []).map((r) => ({
+          ...s,
+          shippingFee: String(s.shippingFee ?? "49"),
+          freeShipping: String(s.freeShipping ?? "999"),
+          couriers,
+          stateShippingRates: (s.stateShippingRates || []).map((r) => ({
             state: r.state,
             fee: String(r.fee ?? "0"),
           })),
@@ -94,6 +102,28 @@ export default function SettingsPage() {
     }));
   }
 
+  function addCourier() {
+    setSettings((prev) => ({
+      ...prev,
+      couriers: [...prev.couriers, { name: "", trackingUrlTemplate: "" }],
+    }));
+  }
+
+  function updateCourier(index, field, value) {
+    setSettings((prev) => {
+      const rows = [...prev.couriers];
+      rows[index] = { ...rows[index], [field]: value };
+      return { ...prev, couriers: rows };
+    });
+  }
+
+  function removeCourier(index) {
+    setSettings((prev) => ({
+      ...prev,
+      couriers: prev.couriers.filter((_, i) => i !== index),
+    }));
+  }
+
   const saveSettings = async () => {
     setSaving(true);
     try {
@@ -107,6 +137,12 @@ export default function SettingsPage() {
           stateShippingRates: settings.stateShippingRates
             .filter((r) => r.state)
             .map((r) => ({ state: r.state, fee: Number(r.fee) || 0 })),
+          couriers: settings.couriers
+            .filter((c) => c.name.trim())
+            .map((c) => ({
+              name: c.name.trim(),
+              trackingUrlTemplate: c.trackingUrlTemplate.trim(),
+            })),
         }),
       });
       const data = await res.json();
@@ -206,35 +242,57 @@ export default function SettingsPage() {
               </p>
             </div>
 
-            <div>
-              <label className="font-semibold block mb-2">Courier Name</label>
-              <input
-                type="text"
-                name="courier"
-                value={settings.courier}
-                onChange={handleChange}
-                placeholder="e.g. Delhivery, India Post"
-                className="w-full border rounded-xl px-4 py-3"
-              />
-              <p className="mt-1 text-xs text-gray-500">
-                Applied to every order when you save its tracking ID.
-              </p>
-            </div>
+            <div className="md:col-span-2">
+              <div className="flex items-center justify-between mb-2">
+                <label className="font-semibold">Courier Partners</label>
+                <button
+                  type="button"
+                  onClick={addCourier}
+                  className="rounded-xl border border-green-700 px-4 py-1.5 text-sm font-semibold text-green-700 hover:bg-green-50"
+                >
+                  + Add Courier
+                </button>
+              </div>
 
-            <div>
-              <label className="font-semibold block mb-2">Tracking URL</label>
-              <input
-                type="text"
-                name="trackingUrlTemplate"
-                value={settings.trackingUrlTemplate}
-                onChange={handleChange}
-                placeholder="https://www.delhivery.com/track/package/{trackingNumber}"
-                className="w-full border rounded-xl px-4 py-3"
-              />
-              <p className="mt-1 text-xs text-gray-500">
-                Use <code>{"{trackingNumber}"}</code> where the tracking ID goes. It is replaced
-                automatically for each order.
+              <p className="mb-3 text-xs text-gray-500">
+                On each order, the admin picks one of these couriers and enters the tracking ID.
+                Use <code>{"{trackingNumber}"}</code> in the tracking URL where the tracking ID goes.
+                It is replaced automatically for each order.
               </p>
+
+              {settings.couriers.length === 0 ? (
+                <p className="text-sm text-gray-500">
+                  No courier partners yet. Click &quot;+ Add Courier&quot; to add one.
+                </p>
+              ) : (
+                <div className="space-y-3">
+                  {settings.couriers.map((c, idx) => (
+                    <div key={idx} className="flex flex-wrap items-center gap-3">
+                      <input
+                        type="text"
+                        placeholder="Courier name (e.g. Delhivery)"
+                        value={c.name}
+                        onChange={(e) => updateCourier(idx, "name", e.target.value)}
+                        className="w-full sm:w-56 border rounded-xl px-4 py-2.5"
+                      />
+                      <input
+                        type="text"
+                        placeholder="https://www.delhivery.com/track/package/{trackingNumber}"
+                        value={c.trackingUrlTemplate}
+                        onChange={(e) => updateCourier(idx, "trackingUrlTemplate", e.target.value)}
+                        className="flex-1 min-w-[220px] border rounded-xl px-4 py-2.5"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => removeCourier(idx)}
+                        className="text-sm font-semibold text-red-600 hover:underline"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             <div className="md:col-span-2">

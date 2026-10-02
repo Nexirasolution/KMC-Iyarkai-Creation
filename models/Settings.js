@@ -8,6 +8,16 @@ const StateShippingRateSchema = new mongoose.Schema(
   { _id: false }
 );
 
+const CourierSchema = new mongoose.Schema(
+  {
+    name: { type: String, required: true, trim: true },
+    // Tracking link template. {trackingNumber} is replaced with the order's tracking ID.
+    // e.g. https://www.delhivery.com/track/package/{trackingNumber}
+    trackingUrlTemplate: { type: String, default: "", trim: true },
+  },
+  { _id: false }
+);
+
 const SettingsSchema = new mongoose.Schema(
   {
     storeName: { type: String, default: "KMC Iyarkai Creation" },
@@ -25,10 +35,12 @@ const SettingsSchema = new mongoose.Schema(
 
     deliveryTime: { type: String, default: "2-4 Days" },
 
-    // Courier used for every shipment. Copied onto each order when its tracking ID is saved.
+    // Courier partners the admin can choose from on each order.
+    couriers: { type: [CourierSchema], default: [] },
+
+    // LEGACY: old single-courier fields. Kept so existing data still works;
+    // used only as a fallback when no couriers have been added yet.
     courier: { type: String, default: "" },
-    // Tracking link template. {trackingNumber} is replaced with the order's tracking ID.
-    // e.g. https://www.delhivery.com/track/package/{trackingNumber}
     trackingUrlTemplate: { type: String, default: "" },
 
     instagram: { type: String, default: "" },

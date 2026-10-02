@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
+import { toGrams, formatWeight, orderTotalGrams, itemsMissingWeight } from "@/lib/weight";
 
 export default function ShippingLabelPage() {
   const { id } = useParams();
@@ -48,6 +49,9 @@ export default function ShippingLabelPage() {
       </div>
     );
   }
+
+  const totalGrams = orderTotalGrams(order.items);
+  const missing = itemsMissingWeight(order.items);
 
   return (
     <div className="min-h-screen bg-champagne/40 px-4 py-6 sm:px-6">
@@ -104,17 +108,32 @@ export default function ShippingLabelPage() {
             <tr className="border-b border-muted/30 text-[10px] uppercase text-muted">
               <th className="pb-1 text-left font-semibold">Item</th>
               <th className="pb-1 text-right font-semibold">Qty</th>
+              <th className="pb-1 pl-2 text-right font-semibold">Weight</th>
             </tr>
           </thead>
           <tbody>
-            {order.items.map((item, i) => (
-              <tr key={i} className="border-b border-muted/10">
-                <td className="py-1 pr-2">{item.name}</td>
-                <td className="py-1 text-right">{item.quantity}</td>
-              </tr>
-            ))}
+            {order.items.map((item, i) => {
+              const lineGrams = toGrams(item.weight) * item.quantity;
+              return (
+                <tr key={i} className="border-b border-muted/10">
+                  <td className="py-1 pr-2">{item.name}</td>
+                  <td className="py-1 text-right">{item.quantity}</td>
+                  <td className="whitespace-nowrap py-1 pl-2 text-right">{formatWeight(lineGrams)}</td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
+
+        <div className="mt-2 flex justify-between text-xs font-semibold sm:text-sm">
+          <span>Total weight</span>
+          <span>{formatWeight(totalGrams)}</span>
+        </div>
+        {missing > 0 && (
+          <p className="mt-0.5 text-[10px] text-muted print:hidden">
+            {missing} item{missing > 1 ? "s have" : " has"} no weight set.
+          </p>
+        )}
 
         <div className="mt-3 flex justify-between border-t-2 border-ink pt-2 text-sm font-bold sm:text-base">
           <span>Total</span>

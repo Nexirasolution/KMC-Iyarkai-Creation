@@ -4,6 +4,8 @@ import Order from "@/models/Order";
 import Product from "@/models/Product";
 import Settings from "@/models/Settings";
 import { getRazorpay } from "@/lib/razorpay";
+import { buildTrackingUrl } from "@/lib/tracking";
+import { attachWeights } from "@/lib/orderWeight";
 
 export async function GET(req, { params }) {
   try {
@@ -11,7 +13,7 @@ export async function GET(req, { params }) {
     const { id } = await params;
     const order = await Order.findById(id);
     if (!order) return NextResponse.json({ error: "Order not found." }, { status: 404 });
-    return NextResponse.json({ order });
+    return NextResponse.json({ order: await attachWeights(order) });
   } catch (err) {
     return NextResponse.json({ error: "Failed to fetch order." }, { status: 500 });
   }
@@ -91,23 +93,27 @@ export async function PUT(req, { params }) {
 
     if (body.tracking) {
       const trackingNumber = String(body.tracking.trackingNumber || "").trim();
+      const courierName = String(body.tracking.courier || "").trim();
 
-      // Courier and URL come from store settings, not from the admin per order.
-      const settings = await Settings.findOne().lean();
-      const courier = (settings?.courier || "").trim();
-      const template = (settings?.trackingUrlTemplate || "").trim();
-
-      let trackingUrl = "";
-      if (trackingNumber && template) {
-        trackingUrl = template.includes("{trackingNumber}")
-          ? template.split("{trackingNumber}").join(encodeURIComponent(trackingNumber))
-          : template; // no placeholder: use the URL as-is
+      if (trackingNumber && !courierName) {
+        return NextResponse.json({ error: "Choose a courier partner." }, { status: 400 });
       }
 
+      // The tracking link is built from the chosen courier's URL template in Settings.
+      const settings = await Settings.findOne().lean();
+      const courier = (settings?.couriers || []).find((c) => c.name === courierName);
+
+      // Fall back to the legacy single courier if it matches (old data).
+      const template =
+        courier?.trackingUrlTemplate ||
+        (courierName && courierName === (settings?.courier || "").trim()
+          ? (settings?.trackingUrlTemplate || "").trim()
+          : "");
+
       order.tracking = {
-        courier: trackingNumber ? courier : "",
+        courier: trackingNumber ? courierName : "",
         trackingNumber,
-        trackingUrl,
+        trackingUrl: buildTrackingUrl(template, trackingNumber),
         updatedAt: new Date(),
       };
     }
@@ -193,7 +199,8 @@ export async function PUT(req, { params }) {
     if (body.notes !== undefined) order.notes = body.notes;
 
     await order.save();
-    return NextResponse.json({ order });
+    // Attach product weights so the admin UI keeps showing them after every update.
+    return NextResponse.json({ order: await attachWeights(order) });
   } catch (err) {
     console.error(err);
     return NextResponse.json({ error: "Failed to update order." }, { status: 500 });

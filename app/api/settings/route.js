@@ -36,7 +36,21 @@ export async function POST(req) {
       body.stateShippingRates = Array.from(byState.values());
     }
 
-    // Courier / tracking URL: trim whitespace.
+    // Courier partners: trim, drop blank names, collapse duplicate names.
+    if (Array.isArray(body.couriers)) {
+      const byName = new Map();
+      for (const c of body.couriers) {
+        const name = String(c?.name || "").trim();
+        if (!name) continue;
+        byName.set(name.toLowerCase(), {
+          name,
+          trackingUrlTemplate: String(c?.trackingUrlTemplate || "").trim(),
+        });
+      }
+      body.couriers = Array.from(byName.values());
+    }
+
+    // Legacy single courier fields: trim whitespace.
     if (typeof body.courier === "string") body.courier = body.courier.trim();
     if (typeof body.trackingUrlTemplate === "string") {
       body.trackingUrlTemplate = body.trackingUrlTemplate.trim();
