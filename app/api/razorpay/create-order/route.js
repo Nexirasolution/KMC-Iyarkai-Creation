@@ -6,6 +6,7 @@ import Product from "@/models/Product";
 import Settings from "@/models/Settings";
 import { buildCartSignature } from "@/lib/cartSignature";
 import { INDIAN_STATES } from "@/lib/indianStates";
+import { calculateShippingFee, cartWeightKg } from "@/lib/shipping";
 
 // If the same customer resubmits the exact same cart (same phone, same
 // items, same amount) within this window, treat it as a resubmit —
@@ -17,7 +18,7 @@ const DEDUP_WINDOW_MS = 10 * 60 * 1000; // 10 minutes
 export async function POST(req) {
   try {
     const body = await req.json();
-    const { amount, customer, items, shippingFee = 0 } = body; // amount in rupees
+    const { amount, customer, items } = body; // amount in rupees
 
     if (!amount || amount <= 0) {
       return NextResponse.json({ error: "Invalid amount." }, { status: 400 });
@@ -61,6 +62,11 @@ export async function POST(req) {
     // Sanity-check stock up front so we don't open a payment window for an
     // order that can't be fulfilled. The authoritative check happens again
     // in createOrderIfNeeded() once payment is actually confirmed.
+    // While we're here, read price + weight from the DB (never trust the
+    // client) so subtotal and cart weight can be computed server-side.
+    let subtotal = 0;
+    const weightLines = [];
+
     for (const item of items) {
       const product = await Product.findById(item.productId);
       if (!product || !product.isActive) {
@@ -72,9 +78,34 @@ export async function POST(req) {
       if (product.stock < item.quantity) {
         return NextResponse.json({ error: `Insufficient stock for ${product.name}.` }, { status: 400 });
       }
+      subtotal += product.price * item.quantity;
+      weightLines.push({ weight: product.weight, quantity: item.quantity });
     }
 
+    // --- Shipping fee (server is the authority) ---
+    // Carts of 6 kg or more pay double the normal fee. Recomputed here so
+    // the customer can't dodge it by editing shippingFee / amount.
+    const weightKg = cartWeightKg(weightLines);
+    const shipping = calculateShippingFee({
+      subtotal,
+      weightKg,
+      settings,
+      state: customer.state,
+    });
+    const shippingFee = shipping.fee;
+
     const amountPaise = Math.round(amount * 100);
+    const expectedPaise = Math.round((subtotal + shippingFee) * 100);
+    if (Math.abs(amountPaise - expectedPaise) > 1) {
+      return NextResponse.json(
+        {
+          error:
+            "Your order total has changed (prices or shipping were updated). Please refresh the page and try again.",
+        },
+        { status: 400 }
+      );
+    }
+
     const cartSignature = buildCartSignature({ phone: customer.phone, items, amountPaise });
 
     // --- Dedup check ---
@@ -120,6 +151,7 @@ export async function POST(req) {
     // This is what lets the order still be created later purely from the
     // Razorpay webhook, even if the customer's browser never comes back
     // (closed tab, killed app, lost signal, etc. right after paying).
+    // shippingFee is the server-computed value, not the client's.
     await PendingOrder.create({
       razorpayOrderId: order.id,
       customer,

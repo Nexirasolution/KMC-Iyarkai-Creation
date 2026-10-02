@@ -25,6 +25,12 @@ const SettingsSchema = new mongoose.Schema(
 
     deliveryTime: { type: String, default: "2-4 Days" },
 
+    // Courier used for every shipment. Copied onto each order when its tracking ID is saved.
+    courier: { type: String, default: "" },
+    // Tracking link template. {trackingNumber} is replaced with the order's tracking ID.
+    // e.g. https://www.delhivery.com/track/package/{trackingNumber}
+    trackingUrlTemplate: { type: String, default: "" },
+
     instagram: { type: String, default: "" },
     facebook: { type: String, default: "" },
     youtube: { type: String, default: "" },

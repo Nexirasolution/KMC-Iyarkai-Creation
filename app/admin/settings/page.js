@@ -13,6 +13,8 @@ const DEFAULT_SETTINGS = {
   freeShipping: "999",
   stateShippingRates: [],
   deliveryTime: "2-4 Days",
+  courier: "",
+  trackingUrlTemplate: "",
   instagram: "",
   facebook: "",
   youtube: "",
@@ -37,6 +39,8 @@ export default function SettingsPage() {
           ...data.settings,
           shippingFee: String(data.settings.shippingFee ?? "49"),
           freeShipping: String(data.settings.freeShipping ?? "999"),
+          courier: data.settings.courier || "",
+          trackingUrlTemplate: data.settings.trackingUrlTemplate || "",
           stateShippingRates: (data.settings.stateShippingRates || []).map((r) => ({
             state: r.state,
             fee: String(r.fee ?? "0"),
@@ -199,6 +203,37 @@ export default function SettingsPage() {
               />
               <p className="mt-1 text-xs text-gray-500">
                 Shown on the order confirmation page as &quot;delivered within …&quot;.
+              </p>
+            </div>
+
+            <div>
+              <label className="font-semibold block mb-2">Courier Name</label>
+              <input
+                type="text"
+                name="courier"
+                value={settings.courier}
+                onChange={handleChange}
+                placeholder="e.g. Delhivery, India Post"
+                className="w-full border rounded-xl px-4 py-3"
+              />
+              <p className="mt-1 text-xs text-gray-500">
+                Applied to every order when you save its tracking ID.
+              </p>
+            </div>
+
+            <div>
+              <label className="font-semibold block mb-2">Tracking URL</label>
+              <input
+                type="text"
+                name="trackingUrlTemplate"
+                value={settings.trackingUrlTemplate}
+                onChange={handleChange}
+                placeholder="https://www.delhivery.com/track/package/{trackingNumber}"
+                className="w-full border rounded-xl px-4 py-3"
+              />
+              <p className="mt-1 text-xs text-gray-500">
+                Use <code>{"{trackingNumber}"}</code> where the tracking ID goes. It is replaced
+                automatically for each order.
               </p>
             </div>
 

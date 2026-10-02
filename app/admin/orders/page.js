@@ -4,10 +4,28 @@ import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import Modal from "@/components/Modal";
 
-const STATUSES = ["pending", "confirmed", "packed", "shipped", "delivered", "cancelled"];
+// Return steps are normal order statuses, so they show to the customer on the
+// Track Order page exactly like packed / shipped.
+const STATUSES = [
+  "pending",
+  "confirmed",
+  "packed",
+  "shipped",
+  "delivered",
+  "returned",
+  "cancelled",
+];
 const PAYMENT_STATUSES = ["pending", "paid", "failed"];
 
 const STORE_NAME = "KMC Iyarkai Creation";
+
+const STATUS_LABELS = {
+  returned: "Returned",
+};
+
+function statusLabel(s) {
+  return STATUS_LABELS[s] || s;
+}
 
 const STATUS_COLORS = {
   pending: "bg-gold/20 text-gold-dark",
@@ -15,6 +33,7 @@ const STATUS_COLORS = {
   packed: "bg-forest/10 text-forest",
   shipped: "bg-terracotta/10 text-terracotta",
   delivered: "bg-forest text-ivory",
+  returned: "bg-gold/20 text-gold-dark",
   cancelled: "bg-muted/10 text-muted",
 };
 
@@ -24,7 +43,9 @@ const PAYMENT_STATUS_COLORS = {
   failed: "bg-terracotta/10 text-terracotta",
 };
 
-const EMPTY_TRACKING = { courier: "", trackingNumber: "", trackingUrl: "" };
+// Courier and tracking URL are configured once in Settings. The admin only
+// enters the tracking ID per order.
+const EMPTY_TRACKING = { trackingNumber: "" };
 
 // Builds a wa.me link from a phone number, optionally with a pre-filled message.
 // Assumes bare 10-digit numbers are Indian mobile numbers missing the country
@@ -81,6 +102,21 @@ function buildWhatsAppMessage(order) {
     }
     case "delivered":
       lines.push(`Hi ${name}, your order ${ref} has been delivered. We hope you love it! Thank you for shopping with us.`);
+      break;
+    case "returned":
+      lines.push(`Hi ${name}, your order ${ref} has been marked as returned.`);
+      if (order.returnInfo?.reason) lines.push(`Reason: ${order.returnInfo.reason}`);
+      if (!order.returnInfo?.refundRequired) {
+        lines.push("No refund is applicable for this return.");
+      } else if (order.refund?.status === "refunded") {
+        lines.push(
+          `A refund of ₹${order.refund.amount} has been processed${
+            order.refund.method ? ` via ${order.refund.method}` : ""
+          }. It may take a few working days to reflect in your account.`
+        );
+      } else {
+        lines.push("Your refund will be processed shortly.");
+      }
       break;
     case "cancelled": {
       lines.push(`Hi ${name}, your order ${ref} has been cancelled.`);
@@ -140,8 +176,15 @@ export default function AdminOrdersPage() {
   const [tracking, setTracking] = useState(EMPTY_TRACKING);
   const [toast, setToast] = useState(null);
 
+  // Store-wide courier / tracking URL template, configured in Settings.
+  const [storeSettings, setStoreSettings] = useState(null);
+
   const [showCancelForm, setShowCancelForm] = useState(false);
   const [cancelReason, setCancelReason] = useState("");
+
+  const [showReturnForm, setShowReturnForm] = useState(false);
+  const [returnReason, setReturnReason] = useState("");
+  const [returnRefund, setReturnRefund] = useState(null); // true | false | null (not chosen yet)
 
   const [refundAmount, setRefundAmount] = useState("");
   const [refundMethod, setRefundMethod] = useState("");
@@ -173,12 +216,18 @@ export default function AdminOrdersPage() {
     loadOrders();
   }, [filter]);
 
+  // Load the store's courier / tracking URL settings once.
+  useEffect(() => {
+    fetch("/api/settings")
+      .then((r) => r.json())
+      .then((d) => setStoreSettings(d.settings || null))
+      .catch(() => {});
+  }, []);
+
   useEffect(() => {
     if (selected) {
       setTracking({
-        courier: selected.tracking?.courier || "",
         trackingNumber: selected.tracking?.trackingNumber || "",
-        trackingUrl: selected.tracking?.trackingUrl || "",
       });
       setRefundAmount(selected.refund?.amount ? String(selected.refund.amount) : String(selected.total || ""));
       setRefundMethod(selected.refund?.method || "");
@@ -194,6 +243,9 @@ export default function AdminOrdersPage() {
     }
     setShowCancelForm(false);
     setCancelReason("");
+    setShowReturnForm(false);
+    setReturnReason("");
+    setReturnRefund(null);
     setShowDeleteConfirm(false);
   }, [selected]);
 
@@ -215,7 +267,7 @@ export default function AdminOrdersPage() {
       setSelected(data.order);
       setNotifyFor({ id, status });
       loadOrders();
-      showToast(`Status updated to "${status}"`);
+      showToast(`Status updated to "${statusLabel(status)}"`);
       return true;
     } else {
       showToast(data.error || "Failed to update status", "error");
@@ -226,7 +278,13 @@ export default function AdminOrdersPage() {
   function handleStatusClick(status) {
     if (!selected || selected.status === status) return;
     if (status === "cancelled") {
+      setShowReturnForm(false);
       setShowCancelForm(true);
+      return;
+    }
+    if (status === "returned") {
+      setShowCancelForm(false);
+      setShowReturnForm(true);
       return;
     }
     updateStatus(selected._id, status);
@@ -265,13 +323,33 @@ export default function AdminOrdersPage() {
     }
   }
 
+  async function confirmReturn() {
+    if (!returnReason.trim()) {
+      showToast("Please enter a return reason", "error");
+      return;
+    }
+    if (returnRefund === null) {
+      showToast("Choose whether a refund is needed", "error");
+      return;
+    }
+    const ok = await updateStatus(selected._id, "returned", {
+      returnInfo: { reason: returnReason.trim(), refundRequired: returnRefund },
+    });
+    if (ok) {
+      setShowReturnForm(false);
+      setReturnReason("");
+      setReturnRefund(null);
+    }
+  }
+
   async function saveTracking() {
     if (!selected) return;
     setUpdating(true);
     const res = await fetch(`/api/orders/${selected._id}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ tracking }),
+      // Only the tracking ID is sent; the server adds courier + URL from Settings.
+      body: JSON.stringify({ tracking: { trackingNumber: tracking.trackingNumber } }),
     });
     const data = await res.json();
     setUpdating(false);
@@ -344,6 +422,10 @@ export default function AdminOrdersPage() {
 
   const notifyActive = !!selected && notifyFor?.id === selected._id;
 
+  const showRefundSection =
+    selected?.status === "cancelled" ||
+    (selected?.status === "returned" && !!selected?.returnInfo?.refundRequired);
+
   return (
     <div>
       <Toast toast={toast} onClose={() => setToast(null)} />
@@ -375,7 +457,7 @@ export default function AdminOrdersPage() {
             onClick={() => setFilter(s)}
             className={`rounded-full border px-4 py-1.5 text-xs font-semibold capitalize ${filter === s ? "border-forest bg-forest text-ivory" : "border-gold/30 text-ink/70"}`}
           >
-            {s}
+            {statusLabel(s)}
           </button>
         ))}
       </div>
@@ -418,8 +500,8 @@ export default function AdminOrdersPage() {
                   </td>
                   <td className="px-4 py-3 text-ink/70">₹{o.total}</td>
                   <td className="px-4 py-3">
-                    <span className={`rounded-full px-3 py-1 text-xs font-medium capitalize ${STATUS_COLORS[o.status]}`}>
-                      {o.status}
+                    <span className={`whitespace-nowrap rounded-full px-3 py-1 text-xs font-medium capitalize ${STATUS_COLORS[o.status]}`}>
+                      {statusLabel(o.status)}
                     </span>
                   </td>
                   <td className="px-4 py-3">
@@ -437,7 +519,7 @@ export default function AdminOrdersPage() {
                         href={toWhatsAppLink(o.customer.phone, buildWhatsAppMessage(o))}
                         target="_blank"
                         rel="noopener noreferrer"
-                        title={`Send "${o.status}" update on WhatsApp`}
+                        title={`Send "${statusLabel(o.status)}" update on WhatsApp`}
                         className="text-xs font-semibold text-forest hover:underline"
                       >
                         WhatsApp
@@ -502,7 +584,7 @@ export default function AdminOrdersPage() {
                     <span
                       className={`rounded-full px-3 py-1 text-xs font-medium capitalize ${STATUS_COLORS[o.status]}`}
                     >
-                      {o.status}
+                      {statusLabel(o.status)}
                     </span>
                     <span
                       className={`rounded-full px-3 py-1 text-xs font-medium capitalize ${PAYMENT_STATUS_COLORS[o.paymentStatus] || PAYMENT_STATUS_COLORS.pending}`}
@@ -649,7 +731,7 @@ export default function AdminOrdersPage() {
                     selected.status === s ? "border-forest bg-forest text-ivory" : "border-gold/30 text-ink/70 hover:bg-champagne"
                   }`}
                 >
-                  {s}
+                  {statusLabel(s)}
                 </button>
               ))}
             </div>
@@ -687,6 +769,67 @@ export default function AdminOrdersPage() {
               </div>
             )}
 
+            {showReturnForm && (
+              <div className="mt-3 rounded-xl2 border border-terracotta/30 bg-terracotta/5 p-4">
+                <label className="text-xs font-semibold text-terracotta">
+                  Return reason / message (shown to customer)
+                </label>
+                <textarea
+                  rows={2}
+                  value={returnReason}
+                  onChange={(e) => setReturnReason(e.target.value)}
+                  placeholder="e.g. Damaged item, wrong product, size issue..."
+                  className="mt-2 w-full rounded-xl2 border border-gold/30 bg-white px-4 py-2 text-sm outline-none focus:border-terracotta"
+                />
+                <p className="mt-3 text-xs font-semibold text-terracotta">Is a refund needed?</p>
+                <div className="mt-2 flex gap-2">
+                  {[
+                    { label: "Yes, refund needed", value: true },
+                    { label: "No refund", value: false },
+                  ].map((opt) => (
+                    <button
+                      key={opt.label}
+                      type="button"
+                      onClick={() => setReturnRefund(opt.value)}
+                      className={`rounded-full border px-4 py-2 text-xs font-semibold transition ${
+                        returnRefund === opt.value
+                          ? "border-forest bg-forest text-ivory"
+                          : "border-gold/30 bg-white text-ink/70 hover:bg-champagne"
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+                <p className="mt-2 text-xs text-muted">
+                  {returnRefund === true
+                    ? "The refund form will open next so you can process the refund."
+                    : returnRefund === false
+                    ? "The customer will see the return message with no refund on the Track Order page."
+                    : ""}
+                </p>
+                <div className="mt-3 flex gap-2">
+                  <button
+                    onClick={confirmReturn}
+                    disabled={updating}
+                    className="rounded-full bg-terracotta px-5 py-2 text-xs font-semibold text-ivory disabled:opacity-60"
+                  >
+                    {updating ? "Saving..." : "Confirm return"}
+                  </button>
+                  <button
+                    onClick={() => {
+                      setShowReturnForm(false);
+                      setReturnReason("");
+                      setReturnRefund(null);
+                    }}
+                    className="rounded-full border border-gold/30 px-5 py-2 text-xs font-semibold text-ink/70"
+                  >
+                    Back
+                  </button>
+                </div>
+              </div>
+            )}
+
             {selected.status === "cancelled" && selected.cancellation?.reason && (
               <div className="mt-3 rounded-xl2 border border-terracotta/20 bg-terracotta/5 p-4">
                 <p className="text-xs font-semibold uppercase text-terracotta">Cancellation Reason</p>
@@ -704,6 +847,21 @@ export default function AdminOrdersPage() {
               </div>
             )}
 
+            {selected.status === "returned" && selected.returnInfo?.reason && (
+              <div className="mt-3 rounded-xl2 border border-terracotta/20 bg-terracotta/5 p-4">
+                <p className="text-xs font-semibold uppercase text-terracotta">Return Reason</p>
+                <p className="mt-1 text-sm text-ink/80">{selected.returnInfo.reason}</p>
+                {selected.returnInfo.returnedAt && (
+                  <p className="mt-1 text-xs text-muted">
+                    Returned on {formatOrderDate(selected.returnInfo.returnedAt, true)}
+                  </p>
+                )}
+                <p className="mt-1 text-xs font-medium text-ink/70">
+                  {selected.returnInfo.refundRequired ? "Refund: needed" : "Refund: not needed"}
+                </p>
+              </div>
+            )}
+
             {/* WhatsApp update to the customer (manual send) */}
             <div
               className={`mt-4 rounded-xl2 border p-4 ${
@@ -713,7 +871,7 @@ export default function AdminOrdersPage() {
               <p className="text-xs font-semibold uppercase text-muted">WhatsApp update to customer</p>
               <p className={`mt-1 text-xs ${notifyActive ? "font-medium text-forest" : "text-muted"}`}>
                 {notifyActive
-                  ? `Status changed to "${selected.status}" — let ${selected.customer.name} know.`
+                  ? `Status changed to "${statusLabel(selected.status)}" — let ${selected.customer.name} know.`
                   : "Opens WhatsApp with this message ready to send. Edit it first if you like."}
               </p>
               <textarea
@@ -741,7 +899,7 @@ export default function AdminOrdersPage() {
                 </button>
                 {selected.status === "shipped" && !selected.tracking?.trackingNumber && (
                   <span className="text-xs text-gold-dark">
-                    Tip: save the tracking details below first to include them in the message.
+                    Tip: save the tracking ID below first to include it in the message.
                   </span>
                 )}
               </div>
@@ -772,7 +930,7 @@ export default function AdminOrdersPage() {
               ))}
             </div>
 
-            {selected.status === "cancelled" && (
+            {showRefundSection && (
               <>
                 <div className="leaf-divider my-5" />
                 <p className="text-xs font-semibold uppercase text-muted">Refund</p>
@@ -878,37 +1036,44 @@ export default function AdminOrdersPage() {
             <p className="mt-1 text-xs text-muted">
               Shown to the customer on the Track Order page once saved.
             </p>
+
+            {!storeSettings?.courier && (
+              <p className="mt-2 text-xs text-gold-dark">
+                No courier is set yet. Add the courier name and tracking URL in{" "}
+                <Link href="/admin/settings" className="font-semibold underline">Settings</Link>.
+              </p>
+            )}
+
             <div className="mt-3 grid gap-3 sm:grid-cols-2">
               <div>
                 <label className="text-xs font-medium text-ink/70">Courier</label>
-                <input
-                  type="text"
-                  placeholder="e.g. Delhivery, India Post"
-                  value={tracking.courier}
-                  onChange={(e) => setTracking((t) => ({ ...t, courier: e.target.value }))}
-                  className="mt-1 w-full rounded-full border border-gold/30 bg-white px-4 py-2 text-sm outline-none focus:border-forest"
-                />
+                <p className="mt-1 rounded-full border border-gold/20 bg-champagne/40 px-4 py-2 text-sm text-ink/70">
+                  {selected.tracking?.courier || storeSettings?.courier || "—"}
+                </p>
               </div>
               <div>
-                <label className="text-xs font-medium text-ink/70">Tracking / AWB number</label>
+                <label className="text-xs font-medium text-ink/70">Tracking ID / AWB number</label>
                 <input
                   type="text"
                   placeholder="e.g. 1234567890"
                   value={tracking.trackingNumber}
-                  onChange={(e) => setTracking((t) => ({ ...t, trackingNumber: e.target.value }))}
+                  onChange={(e) => setTracking({ trackingNumber: e.target.value })}
                   className="mt-1 w-full rounded-full border border-gold/30 bg-white px-4 py-2 text-sm outline-none focus:border-forest"
                 />
               </div>
-              <div className="sm:col-span-2">
-                <label className="text-xs font-medium text-ink/70">Tracking URL (optional)</label>
-                <input
-                  type="text"
-                  placeholder="https://courier-site.com/track/..."
-                  value={tracking.trackingUrl}
-                  onChange={(e) => setTracking((t) => ({ ...t, trackingUrl: e.target.value }))}
-                  className="mt-1 w-full rounded-full border border-gold/30 bg-white px-4 py-2 text-sm outline-none focus:border-forest"
-                />
-              </div>
+              {selected.tracking?.trackingUrl && (
+                <div className="sm:col-span-2">
+                  <label className="text-xs font-medium text-ink/70">Tracking link</label>
+                  <a
+                    href={selected.tracking.trackingUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="mt-1 block break-all text-xs text-forest hover:underline"
+                  >
+                    {selected.tracking.trackingUrl}
+                  </a>
+                </div>
+              )}
             </div>
             <div className="mt-3 flex items-center gap-3">
               <button

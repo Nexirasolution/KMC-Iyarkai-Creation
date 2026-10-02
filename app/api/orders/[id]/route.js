@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { connectDB } from "@/lib/mongodb";
 import Order from "@/models/Order";
 import Product from "@/models/Product";
+import Settings from "@/models/Settings";
 import { getRazorpay } from "@/lib/razorpay";
 
 export async function GET(req, { params }) {
@@ -49,19 +50,64 @@ export async function PUT(req, { params }) {
         };
       }
 
+      // Admin marks a delivered order as returned
+      if (body.status === "returned") {
+        if (order.status !== "delivered") {
+          return NextResponse.json(
+            { error: "Only delivered orders can be marked as returned." },
+            { status: 400 }
+          );
+        }
+        const reason = body.returnInfo?.reason?.trim();
+        if (!reason) {
+          return NextResponse.json({ error: "A return reason is required." }, { status: 400 });
+        }
+        if (typeof body.returnInfo?.refundRequired !== "boolean") {
+          return NextResponse.json(
+            { error: "Choose whether a refund is needed." },
+            { status: 400 }
+          );
+        }
+        order.returnInfo = {
+          reason,
+          refundRequired: body.returnInfo.refundRequired,
+          returnedAt: new Date(),
+        };
+        // Note: stock is NOT restocked automatically on return, since
+        // returned items may be damaged. Adjust stock manually if needed.
+      }
+
       order.status = body.status;
+
+      let historyNote = body.note || "";
+      if (body.status === "cancelled") historyNote = order.cancellation.reason;
+      if (body.status === "returned") historyNote = order.returnInfo.reason;
+
       order.statusHistory.push({
         status: body.status,
-        note: body.status === "cancelled" ? order.cancellation.reason : body.note || "",
+        note: historyNote,
       });
     }
 
     if (body.tracking) {
-      const { courier = "", trackingNumber = "", trackingUrl = "" } = body.tracking;
+      const trackingNumber = String(body.tracking.trackingNumber || "").trim();
+
+      // Courier and URL come from store settings, not from the admin per order.
+      const settings = await Settings.findOne().lean();
+      const courier = (settings?.courier || "").trim();
+      const template = (settings?.trackingUrlTemplate || "").trim();
+
+      let trackingUrl = "";
+      if (trackingNumber && template) {
+        trackingUrl = template.includes("{trackingNumber}")
+          ? template.split("{trackingNumber}").join(encodeURIComponent(trackingNumber))
+          : template; // no placeholder: use the URL as-is
+      }
+
       order.tracking = {
-        courier: courier.trim(),
-        trackingNumber: trackingNumber.trim(),
-        trackingUrl: trackingUrl.trim(),
+        courier: trackingNumber ? courier : "",
+        trackingNumber,
+        trackingUrl,
         updatedAt: new Date(),
       };
     }
@@ -78,10 +124,20 @@ export async function PUT(req, { params }) {
         );
       }
 
+      if (order.status === "returned" && !order.returnInfo?.refundRequired) {
+        return NextResponse.json(
+          { error: "This return was marked as no refund needed." },
+          { status: 400 }
+        );
+      }
+
       const isOnlinePayment =
         order.paymentMethod === "Online" &&
         order.paymentStatus === "paid" &&
         order.razorpay?.paymentId;
+
+      const defaultRefundReason =
+        order.status === "returned" ? "Order returned" : "Order cancelled";
 
       if (isOnlinePayment) {
         try {
@@ -91,7 +147,7 @@ export async function PUT(req, { params }) {
             speed: "normal",
             notes: {
               orderNumber: order.orderNumber,
-              reason: body.refund.note || "Order cancelled",
+              reason: body.refund.note || defaultRefundReason,
             },
           });
 

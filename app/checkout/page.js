@@ -7,6 +7,7 @@ import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import { useCart } from "@/context/CartContext";
 import { INDIAN_STATES } from "@/lib/indianStates";
+import { calculateShippingFee, cartWeightKg, HEAVY_CART_KG } from "@/lib/shipping";
 
 // Turns a stored phone number into a dialable / WhatsApp-ready number.
 // Bare 10-digit numbers are assumed to be Indian and get the +91 country code.
@@ -37,6 +38,12 @@ export default function CheckoutPage() {
     storeName: "KMC Iyarkai Creation",
   });
 
+  // Product weights, keyed by productId. Cart items don't carry weight, so we
+  // look it up once per product. weightsReady stays false until the lookup
+  // finishes so the shipping fee never flashes a too-low value.
+  const [weights, setWeights] = useState({});
+  const [weightsReady, setWeightsReady] = useState(false);
+
   useEffect(() => {
     fetch("/api/settings")
       .then((res) => res.json())
@@ -45,6 +52,32 @@ export default function CheckoutPage() {
       })
       .catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    const missing = items.filter((i) => !(i.productId in weights)).map((i) => i.productId);
+    if (missing.length === 0) {
+      setWeightsReady(true);
+      return;
+    }
+    setWeightsReady(false);
+    let cancelled = false;
+    Promise.all(
+      missing.map((id) =>
+        fetch(`/api/products/${id}`)
+          .then((r) => r.json())
+          .then((d) => [id, d.product?.weight || null])
+          .catch(() => [id, null])
+      )
+    ).then((entries) => {
+      if (cancelled) return;
+      setWeights((prev) => ({ ...prev, ...Object.fromEntries(entries) }));
+      setWeightsReady(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [items, hydrated, weights]);
 
   // Only offer the states that have a shipping rate set in Settings.
   // If no state rates are configured at all (or none match the state list),
@@ -75,16 +108,23 @@ export default function CheckoutPage() {
     }
   }, [availableStates, form.state]);
 
-  // Look up the fee for the selected state; fall back to the default fee
-  // when that state has no override configured in Settings.
-  const stateFee = useMemo(() => {
-    const match = (settings.stateShippingRates || []).find(
-      (r) => r.state?.trim().toLowerCase() === form.state?.trim().toLowerCase()
-    );
-    return match ? Number(match.fee) : Number(settings.shippingFee);
-  }, [settings, form.state]);
+  // Total cart weight in kg (products without a weight count as 0).
+  const weightKg = useMemo(
+    () =>
+      cartWeightKg(
+        items.map((i) => ({ weight: weights[i.productId], quantity: i.quantity }))
+      ),
+    [items, weights]
+  );
 
-  const shippingFee = subtotal >= Number(settings.freeShipping) ? 0 : stateFee;
+  // State rate (or default fee), free-shipping threshold, and the 6 kg
+  // double-charge rule all live in lib/shipping.js (shared with the server).
+  const shipping = useMemo(
+    () => calculateShippingFee({ subtotal, weightKg, settings, state: form.state }),
+    [subtotal, weightKg, settings, form.state]
+  );
+
+  const shippingFee = shipping.fee;
   const total = subtotal + shippingFee;
 
   function update(field, value) {
@@ -123,6 +163,8 @@ export default function CheckoutPage() {
       // a PendingOrder against the Razorpay order id. That's what lets the
       // order still get created via the webhook even if this tab closes
       // before the payment success handler below ever runs.
+      // (The server recomputes the shipping fee itself and rejects the
+      // request if this amount doesn't match.)
       const orderRes = await fetch("/api/razorpay/create-order", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -343,15 +385,23 @@ export default function CheckoutPage() {
               </div>
               <div className="flex justify-between text-sm text-ink/80">
                 <span>Shipping ({form.state})</span>
-                <span>{shippingFee === 0 ? "Free" : `₹${shippingFee}`}</span>
+                <span>
+                  {!weightsReady ? "..." : shippingFee === 0 ? "Free" : `₹${shippingFee}`}
+                </span>
               </div>
+              {weightsReady && shipping.isHeavy && !shipping.isFree && (
+                <p className="mt-1 text-xs text-gold-dark">
+                  Heavy order ({weightKg} kg): orders of {HEAVY_CART_KG} kg or more have double
+                  shipping (₹{shipping.baseFee} × 2).
+                </p>
+              )}
               <div className="mt-2 flex justify-between font-display text-base font-bold text-forest">
                 <span>Total</span>
                 <span>₹{total}</span>
               </div>
               <button
                 type="submit"
-                disabled={loading}
+                disabled={loading || !weightsReady}
                 className="mt-6 w-full rounded-full bg-forest px-8 py-3.5 text-sm font-semibold text-ivory shadow-soft transition hover:bg-forest-light disabled:opacity-60"
               >
                 {loading ? "Processing..." : "Pay & Place Order"}

@@ -33,6 +33,15 @@ const CancellationSchema = new mongoose.Schema(
   { _id: false }
 );
 
+const ReturnSchema = new mongoose.Schema(
+  {
+    reason: { type: String, default: "" },
+    refundRequired: { type: Boolean, default: false },
+    returnedAt: { type: Date, default: null },
+  },
+  { _id: false }
+);
+
 const RefundSchema = new mongoose.Schema(
   {
     amount: { type: Number, default: 0 },
@@ -82,7 +91,15 @@ const OrderSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ["pending", "confirmed", "packed", "shipped", "delivered", "cancelled"],
+      enum: [
+        "pending",
+        "confirmed",
+        "packed",
+        "shipped",
+        "delivered",
+        "returned",
+        "cancelled",
+      ],
       default: "pending",
     },
     statusHistory: {
@@ -97,6 +114,7 @@ const OrderSchema = new mongoose.Schema(
     },
     tracking: { type: TrackingSchema, default: () => ({}) },
     cancellation: { type: CancellationSchema, default: () => ({}) },
+    returnInfo: { type: ReturnSchema, default: () => ({}) },
     refund: { type: RefundSchema, default: () => ({}) },
     notes: { type: String, default: "" },
   },

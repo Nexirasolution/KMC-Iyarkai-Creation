@@ -36,6 +36,12 @@ export async function POST(req) {
       body.stateShippingRates = Array.from(byState.values());
     }
 
+    // Courier / tracking URL: trim whitespace.
+    if (typeof body.courier === "string") body.courier = body.courier.trim();
+    if (typeof body.trackingUrlTemplate === "string") {
+      body.trackingUrlTemplate = body.trackingUrlTemplate.trim();
+    }
+
     let settings = await Settings.findOne();
     if (settings) {
       Object.assign(settings, body);

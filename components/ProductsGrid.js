@@ -74,8 +74,6 @@ export default function ProductsGrid({ initialCategory, initialSearch }) {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState(initialSearch || "");
   const [sortBy, setSortBy] = useState("");
-  const [minPrice, setMinPrice] = useState("");
-  const [maxPrice, setMaxPrice] = useState("");
   const [showFilters, setShowFilters] = useState(false);
   const [pagination, setPagination] = useState(null);
 
@@ -108,6 +106,25 @@ export default function ProductsGrid({ initialCategory, initialSearch }) {
   const subcategories = activeParentId ? childrenOf(activeParentId) : [];
   const activeParentCat = activeParentId ? categoryById[activeParentId] : null;
 
+  // Subcategory dropdown (in the filter row).
+  //  - A category is selected  -> list only that parent's subcategories.
+  //  - Nothing selected ("All") -> list every subcategory, grouped by parent,
+  //    so a shopper can jump straight to one.
+  const subcategoryGroups = useMemo(() => {
+    if (activeParentId) {
+      return subcategories.length > 0
+        ? [{ parent: activeParentCat, children: subcategories }]
+        : [];
+    }
+    return topLevelCategories
+      .map((p) => ({ parent: p, children: childrenOf(p._id) }))
+      .filter((g) => g.children.length > 0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeParentId, subcategories, activeParentCat, topLevelCategories, categories]);
+
+  // The dropdown shows a value only when a subcategory itself is active.
+  const subcategoryValue = activeCat && parentIdOf(activeCat) ? activeCategory : "";
+
   // Any FILTER change should jump back to page 1. Note `page` is deliberately
   // NOT in this dependency list — otherwise paging back/forward would
   // re-trigger this effect and force you back to page 1 every time.
@@ -116,7 +133,7 @@ export default function ProductsGrid({ initialCategory, initialSearch }) {
       setPageInUrl(1);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeCategory, search, sortBy, minPrice, maxPrice]);
+  }, [activeCategory, search, sortBy]);
 
   useEffect(() => {
     setLoading(true);
@@ -128,8 +145,6 @@ export default function ProductsGrid({ initialCategory, initialSearch }) {
     if (activeCategory) params.set("category", activeCategory);
     if (search) params.set("search", search);
     if (sortBy) params.set("sort", sortBy);
-    if (minPrice) params.set("minPrice", minPrice);
-    if (maxPrice) params.set("maxPrice", maxPrice);
 
     fetch(`/api/products?${params.toString()}`)
       .then((r) => r.json())
@@ -138,7 +153,7 @@ export default function ProductsGrid({ initialCategory, initialSearch }) {
         setPagination(d.pagination || null);
       })
       .finally(() => setLoading(false));
-  }, [activeCategory, search, sortBy, minPrice, maxPrice, page]);
+  }, [activeCategory, search, sortBy, page]);
 
   function setCategoryInUrl(categoryId) {
     const params = new URLSearchParams(searchParams.toString());
@@ -161,12 +176,16 @@ export default function ProductsGrid({ initialCategory, initialSearch }) {
     router.push(`${pathname}?${params.toString()}`, { scroll: false });
   }
 
+  // Choosing "All subcategories" goes back to the parent category (or to
+  // everything if no parent is selected).
+  function handleSubcategoryChange(value) {
+    setCategoryInUrl(value || activeParentId || "");
+  }
+
   function clearFilters() {
     setCategoryInUrl("");
     setSearch("");
     setSortBy("");
-    setMinPrice("");
-    setMaxPrice("");
   }
 
   function goToPage(p) {
@@ -175,7 +194,7 @@ export default function ProductsGrid({ initialCategory, initialSearch }) {
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
-  const hasActiveFilters = activeCategory || search || sortBy || minPrice || maxPrice;
+  const hasActiveFilters = activeCategory || search || sortBy;
   const totalPages = pagination?.totalPages || 1;
 
   // Compact page-number list: first, last, current ±1, with ellipses
@@ -262,7 +281,7 @@ export default function ProductsGrid({ initialCategory, initialSearch }) {
         </div>
       )}
 
-      {/* Sort + price filter row */}
+      {/* Subcategory filter + sort row */}
       <div className="mb-8 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <button
           onClick={() => setShowFilters((v) => !v)}
@@ -276,26 +295,32 @@ export default function ProductsGrid({ initialCategory, initialSearch }) {
             showFilters ? "flex" : "hidden"
           } flex-col gap-3 sm:flex-row sm:items-center md:flex`}
         >
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-semibold text-ink/60">₹</span>
-            <input
-              type="number"
-              min="0"
-              placeholder="Min"
-              value={minPrice}
-              onChange={(e) => setMinPrice(e.target.value)}
-              className="w-24 rounded-full border border-gold/30 bg-white px-3 py-2 text-sm outline-none focus:border-forest"
-            />
-            <span className="text-xs text-ink/40">to</span>
-            <input
-              type="number"
-              min="0"
-              placeholder="Max"
-              value={maxPrice}
-              onChange={(e) => setMaxPrice(e.target.value)}
-              className="w-24 rounded-full border border-gold/30 bg-white px-3 py-2 text-sm outline-none focus:border-forest"
-            />
-          </div>
+          {subcategoryGroups.length > 0 && (
+            <select
+              value={subcategoryValue}
+              onChange={(e) => handleSubcategoryChange(e.target.value)}
+              aria-label="Filter by subcategory"
+              className="rounded-full border border-gold/30 bg-white px-4 py-2 text-sm outline-none focus:border-forest"
+            >
+              <option value="">All subcategories</option>
+              {subcategoryGroups.length === 1 && activeParentId
+                ? subcategoryGroups[0].children.map((sub) => (
+                    <option key={sub._id} value={sub._id}>
+                      {sub.name}
+                    </option>
+                  ))
+                : subcategoryGroups.map((g) => (
+                    <optgroup key={g.parent._id} label={g.parent.name}>
+                      {g.children.map((sub) => (
+                        <option key={sub._id} value={sub._id}>
+                          {sub.name}
+                        </option>
+                      ))}
+                    </optgroup>
+                  ))}
+            </select>
+          )}
+
         </div>
 
         <div className="flex items-center gap-3">

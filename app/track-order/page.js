@@ -6,14 +6,57 @@ import Footer from "@/components/Footer";
 import { LeafIcon } from "@/components/Icons";
 
 const STATUS_STEPS = ["pending", "confirmed", "packed", "shipped", "delivered"];
+
 const STATUS_LABELS = {
   pending: "Order Placed",
   confirmed: "Confirmed",
   packed: "Packed",
   shipped: "Shipped",
   delivered: "Delivered",
+  returned: "Returned",
   cancelled: "Cancelled",
 };
+
+function formatDate(value) {
+  return new Date(value).toLocaleDateString("en-IN", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
+}
+
+// Step-by-step progress bar used for both the delivery and return flows
+function Timeline({ steps, currentIdx }) {
+  return (
+    <div className="flex items-center justify-between">
+      {steps.map((step, idx) => {
+        const done = idx <= currentIdx;
+        return (
+          <div key={step} className="flex flex-1 flex-col items-center">
+            <div className="flex w-full items-center">
+              {idx !== 0 && (
+                <div className={`h-0.5 flex-1 ${idx <= currentIdx ? "bg-forest" : "bg-gold/20"}`} />
+              )}
+              <span
+                className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[10px] font-bold ${
+                  done ? "bg-forest text-ivory" : "bg-champagne text-muted"
+                }`}
+              >
+                {idx + 1}
+              </span>
+              {idx !== steps.length - 1 && (
+                <div className={`h-0.5 flex-1 ${idx < currentIdx ? "bg-forest" : "bg-gold/20"}`} />
+              )}
+            </div>
+            <span className="mt-2 text-center text-[10px] font-medium text-ink/70">
+              {STATUS_LABELS[step]}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
 
 export default function TrackOrderPage() {
   const [phone, setPhone] = useState("");
@@ -98,152 +141,152 @@ export default function TrackOrderPage() {
 
         {orders && (
           <div className="mt-10 space-y-6">
-            {orders.map((order) => (
-              <div key={order._id} className="rounded-xl2 border border-gold/15 bg-white p-6 shadow-card">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div>
-                    <p className="font-display text-lg font-bold text-forest">{order.orderNumber}</p>
-                    <p className="text-xs text-muted">
-                      Placed on {new Date(order.createdAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
-                    </p>
-                  </div>
-                  <span className="rounded-full bg-champagne px-4 py-1.5 text-xs font-semibold text-forest">
-                    {STATUS_LABELS[order.status]}
-                  </span>
-                </div>
+            {orders.map((order) => {
+              const isReturn = order.status === "returned";
+              // Once a return starts, the delivery timeline is fully complete
+              const mainIdx = isReturn
+                ? STATUS_STEPS.indexOf("delivered")
+                : STATUS_STEPS.indexOf(order.status);
 
-                {order.status !== "cancelled" ? (
-                  <div className="mt-6 flex items-center justify-between">
-                    {STATUS_STEPS.map((step, idx) => {
-                      const currentIdx = STATUS_STEPS.indexOf(order.status);
-                      const done = idx <= currentIdx;
-                      return (
-                        <div key={step} className="flex flex-1 flex-col items-center">
-                          <div className="flex w-full items-center">
-                            {idx !== 0 && (
-                              <div className={`h-0.5 flex-1 ${idx <= currentIdx ? "bg-forest" : "bg-gold/20"}`} />
-                            )}
-                            <span
-                              className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[10px] font-bold ${
-                                done ? "bg-forest text-ivory" : "bg-champagne text-muted"
-                              }`}
-                            >
-                              {idx + 1}
-                            </span>
-                            {idx !== STATUS_STEPS.length - 1 && (
-                              <div className={`h-0.5 flex-1 ${idx < currentIdx ? "bg-forest" : "bg-gold/20"}`} />
-                            )}
-                          </div>
-                          <span className="mt-2 text-center text-[10px] font-medium text-ink/70">
-                            {STATUS_LABELS[step]}
-                          </span>
-                        </div>
-                      );
-                    })}
+              return (
+                <div key={order._id} className="rounded-xl2 border border-gold/15 bg-white p-6 shadow-card">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <p className="font-display text-lg font-bold text-forest">{order.orderNumber}</p>
+                      <p className="text-xs text-muted">Placed on {formatDate(order.createdAt)}</p>
+                    </div>
+                    <span className="rounded-full bg-champagne px-4 py-1.5 text-xs font-semibold text-forest">
+                      {STATUS_LABELS[order.status] || order.status}
+                    </span>
                   </div>
-                ) : (
-                  <div className="mt-4 rounded-xl2 border border-terracotta/20 bg-terracotta/5 p-4">
-                    <p className="text-sm font-semibold text-terracotta">This order was cancelled.</p>
-                    {order.cancellation?.reason && (
-                      <p className="mt-1 text-sm text-ink/70">
-                        <span className="font-medium text-ink">Reason:</span> {order.cancellation.reason}
-                      </p>
-                    )}
-                    {order.cancellation?.cancelledAt && (
-                      <p className="mt-1 text-xs text-muted">
-                        Cancelled on{" "}
-                        {new Date(order.cancellation.cancelledAt).toLocaleDateString("en-IN", {
-                          day: "numeric",
-                          month: "short",
-                          year: "numeric",
-                        })}
-                      </p>
-                    )}
-                  </div>
-                )}
 
-                {order.refund?.status === "refunded" && (
-                  <>
-                    <div className="leaf-divider my-5" />
-                    <div className="rounded-xl2 border border-forest/20 bg-forest/5 p-4">
-                      <p className="text-xs font-semibold uppercase text-forest">Refund</p>
-                      <p className="mt-1 text-sm font-semibold text-forest">
-                        ₹{order.refund.amount} refund initiated
-                      </p>
-                      {order.refund.method && (
+                  {order.status !== "cancelled" ? (
+                    <div className="mt-6">
+                      <Timeline steps={STATUS_STEPS} currentIdx={mainIdx} />
+                    </div>
+                  ) : (
+                    <div className="mt-4 rounded-xl2 border border-terracotta/20 bg-terracotta/5 p-4">
+                      <p className="text-sm font-semibold text-terracotta">This order was cancelled.</p>
+                      {order.cancellation?.reason && (
                         <p className="mt-1 text-sm text-ink/70">
-                          <span className="font-medium text-ink">Method:</span> {order.refund.method}
+                          <span className="font-medium text-ink">Reason:</span> {order.cancellation.reason}
                         </p>
                       )}
-                      {order.refund.refundedAt && (
+                      {order.cancellation?.cancelledAt && (
                         <p className="mt-1 text-xs text-muted">
-                          Initiated on{" "}
-                          {new Date(order.refund.refundedAt).toLocaleDateString("en-IN", {
-                            day: "numeric",
-                            month: "short",
-                            year: "numeric",
-                          })}
-                        </p>
-                      )}
-                      {order.refund.method === "Razorpay" && (
-                        <p className="mt-2 text-xs text-muted">
-                          Refunds to your original payment method usually reflect within 5–7 business days.
+                          Cancelled on {formatDate(order.cancellation.cancelledAt)}
                         </p>
                       )}
                     </div>
-                  </>
-                )}
+                  )}
 
-                {(order.tracking?.courier || order.tracking?.trackingNumber) && (
-                  <>
-                    <div className="leaf-divider my-5" />
-                    <div className="rounded-xl2 border border-gold/20 bg-champagne/50 p-4">
-                      <p className="text-xs font-semibold uppercase text-muted">Shipment Tracking</p>
-                      <div className="mt-2 space-y-1 text-sm text-ink/80">
-                        {order.tracking.courier && (
-                          <p>
-                            <span className="font-medium text-ink">Courier:</span> {order.tracking.courier}
+                  {isReturn && (
+                    <>
+                      <div className="leaf-divider my-5" />
+                      <div className="rounded-xl2 border border-gold/20 bg-champagne/50 p-4">
+                        <p className="text-xs font-semibold uppercase text-muted">Order Returned</p>
+                        {order.returnInfo?.reason && (
+                          <p className="mt-2 text-sm text-ink/70">
+                            <span className="font-medium text-ink">Reason:</span> {order.returnInfo.reason}
                           </p>
                         )}
-                        {order.tracking.trackingNumber && (
-                          <p>
-                            <span className="font-medium text-ink">Tracking No:</span> {order.tracking.trackingNumber}
+                        {order.returnInfo?.returnedAt && (
+                          <p className="mt-1 text-xs text-muted">
+                            Returned on {formatDate(order.returnInfo.returnedAt)}
+                          </p>
+                        )}
+                        {!order.returnInfo?.refundRequired && (
+                          <p className="mt-3 text-xs font-medium text-ink/70">
+                            No refund is applicable for this return.
+                          </p>
+                        )}
+                        {order.returnInfo?.refundRequired && order.refund?.status !== "refunded" && (
+                          <p className="mt-3 text-xs text-muted">
+                            Your refund will be processed shortly.
                           </p>
                         )}
                       </div>
-                      {order.tracking.trackingUrl && (
-                        
-                        <a  href={order.tracking.trackingUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="mt-3 inline-block rounded-full bg-forest px-5 py-2 text-xs font-semibold text-ivory shadow-soft transition hover:bg-forest-light"
-                        >
-                          Track shipment &rarr;
-                        </a>
-                      )}
-                    </div>
-                  </>
-                )}
+                    </>
+                  )}
 
-                <div className="leaf-divider my-5" />
+                  {order.refund?.status === "refunded" && (
+                    <>
+                      <div className="leaf-divider my-5" />
+                      <div className="rounded-xl2 border border-forest/20 bg-forest/5 p-4">
+                        <p className="text-xs font-semibold uppercase text-forest">Refund</p>
+                        <p className="mt-1 text-sm font-semibold text-forest">
+                          ₹{order.refund.amount} refund initiated
+                        </p>
+                        {order.refund.method && (
+                          <p className="mt-1 text-sm text-ink/70">
+                            <span className="font-medium text-ink">Method:</span> {order.refund.method}
+                          </p>
+                        )}
+                        {order.refund.refundedAt && (
+                          <p className="mt-1 text-xs text-muted">
+                            Initiated on {formatDate(order.refund.refundedAt)}
+                          </p>
+                        )}
+                        {order.refund.method === "Razorpay" && (
+                          <p className="mt-2 text-xs text-muted">
+                            Refunds to your original payment method usually reflect within 5–7 business days.
+                          </p>
+                        )}
+                      </div>
+                    </>
+                  )}
 
-                <div className="space-y-2">
-                  {order.items.map((item, i) => (
-                    <div key={i} className="flex justify-between text-sm text-ink/80">
-                      <span>{item.name} × {item.quantity}</span>
-                      <span>₹{item.price * item.quantity}</span>
-                    </div>
-                  ))}
+                  {(order.tracking?.courier || order.tracking?.trackingNumber) && (
+                    <>
+                      <div className="leaf-divider my-5" />
+                      <div className="rounded-xl2 border border-gold/20 bg-champagne/50 p-4">
+                        <p className="text-xs font-semibold uppercase text-muted">Shipment Tracking</p>
+                        <div className="mt-2 space-y-1 text-sm text-ink/80">
+                          {order.tracking.courier && (
+                            <p>
+                              <span className="font-medium text-ink">Courier:</span> {order.tracking.courier}
+                            </p>
+                          )}
+                          {order.tracking.trackingNumber && (
+                            <p>
+                              <span className="font-medium text-ink">Tracking No:</span> {order.tracking.trackingNumber}
+                            </p>
+                          )}
+                        </div>
+                        {order.tracking.trackingUrl && (
+                          <a
+                            href={order.tracking.trackingUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="mt-3 inline-block rounded-full bg-forest px-5 py-2 text-xs font-semibold text-ivory shadow-soft transition hover:bg-forest-light"
+                          >
+                            Track shipment &rarr;
+                          </a>
+                        )}
+                      </div>
+                    </>
+                  )}
+
+                  <div className="leaf-divider my-5" />
+
+                  <div className="space-y-2">
+                    {order.items.map((item, i) => (
+                      <div key={i} className="flex justify-between text-sm text-ink/80">
+                        <span>{item.name} × {item.quantity}</span>
+                        <span>₹{item.price * item.quantity}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="mt-3 flex justify-between font-display text-sm font-bold text-forest">
+                    <span>Total</span>
+                    <span>₹{order.total}</span>
+                  </div>
+                  <p className="mt-3 text-xs text-muted">
+                    Delivering to: {order.customer.address}, {order.customer.city} {order.customer.pincode}
+                  </p>
                 </div>
-                <div className="mt-3 flex justify-between font-display text-sm font-bold text-forest">
-                  <span>Total</span>
-                  <span>₹{order.total}</span>
-                </div>
-                <p className="mt-3 text-xs text-muted">
-                  Delivering to: {order.customer.address}, {order.customer.city} {order.customer.pincode}
-                </p>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
 
