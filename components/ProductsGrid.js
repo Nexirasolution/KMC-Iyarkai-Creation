@@ -21,20 +21,34 @@ function parentIdOf(cat) {
 }
 
 // Round image-icon button used for both the top-level category row and the
-// subcategory row. `size` controls the circle's diameter so subcategories
-// can render slightly smaller than parent categories, matching the visual
-// hierarchy used on the /categories page.
-function CategoryIconButton({ image, icon, label, isActive, onClick, size = "h-14 w-14" }) {
+// subcategory row. `variant="sub"` renders a larger, darker, bolder version so
+// subcategories stand out clearly once a parent category is selected.
+function CategoryIconButton({ image, icon, label, isActive, onClick, variant = "main" }) {
   const Icon = CATEGORY_ICONS[icon] || LeafIcon;
+  const isSub = variant === "sub";
+
+  const wrapperWidth = isSub ? "w-20" : "w-16";
+  const circleSize = isSub ? "h-16 w-16" : "h-14 w-14";
+
+  const circleBorder = isSub
+    ? isActive
+      ? "border-[3px] border-forest shadow-md ring-2 ring-forest/30"
+      : "border-[3px] border-ink/30 hover:border-forest/60"
+    : isActive
+    ? "border-2 border-forest"
+    : "border-2 border-gold/20 hover:border-gold/40";
+
+  const labelClass = isSub
+    ? `text-xs font-bold leading-tight ${isActive ? "text-forest" : "text-ink"}`
+    : `text-[11px] font-semibold leading-tight ${isActive ? "text-forest" : "text-ink/70"}`;
+
   return (
     <button
       onClick={onClick}
-      className="flex w-16 flex-col items-center gap-1.5 text-center"
+      className={`flex ${wrapperWidth} flex-col items-center gap-1.5 text-center`}
     >
       <span
-        className={`flex ${size} shrink-0 items-center justify-center overflow-hidden rounded-full border-2 transition ${
-          isActive ? "border-forest" : "border-gold/20 hover:border-gold/40"
-        }`}
+        className={`flex ${circleSize} shrink-0 items-center justify-center overflow-hidden rounded-full transition ${circleBorder}`}
       >
         {image?.url ? (
           <img src={image.url} alt={label} className="h-full w-full object-cover" />
@@ -48,13 +62,7 @@ function CategoryIconButton({ image, icon, label, isActive, onClick, size = "h-1
           </span>
         )}
       </span>
-      <span
-        className={`line-clamp-2 text-[11px] font-semibold leading-tight ${
-          isActive ? "text-forest" : "text-ink/70"
-        }`}
-      >
-        {label}
-      </span>
+      <span className={`line-clamp-2 ${labelClass}`}>{label}</span>
     </button>
   );
 }
@@ -250,32 +258,32 @@ export default function ProductsGrid({ initialCategory, initialSearch }) {
       </div>
 
       {/* Subcategory row — shown once a parent (or one of its children) is
-          active. Same round-icon treatment as the top-level row, just
-          smaller, since these are one level deeper. */}
+          active. Larger, darker and sitting on a tinted panel so it stands
+          out from the top-level row. */}
       {subcategories.length > 0 && (
-        <div className="mb-6 flex flex-wrap items-start gap-x-4 gap-y-3 border-l-2 border-gold/30 pl-4">
-          <div className="flex w-16 flex-col items-center gap-1.5 text-center">
-            <span className="text-[11px] font-semibold uppercase tracking-wide text-ink/40">
+        <div className="mb-6 flex flex-wrap items-start gap-x-5 gap-y-4 rounded-2xl border border-forest/20 bg-champagne/60 p-4 shadow-sm">
+          <div className="flex w-20 flex-col items-center justify-center self-stretch text-center">
+            <span className="text-xs font-bold uppercase tracking-wide text-forest">
               {activeParentCat?.name}
             </span>
           </div>
           <CategoryIconButton
+            variant="sub"
             image={null}
             icon={activeParentCat?.icon}
             label="All"
             isActive={activeCategory === activeParentId}
             onClick={() => setCategoryInUrl(activeParentId)}
-            size="h-11 w-11"
           />
           {subcategories.map((sub) => (
             <CategoryIconButton
               key={sub._id}
+              variant="sub"
               image={sub.image}
               icon={sub.icon}
               label={sub.name}
               isActive={activeCategory === sub._id}
               onClick={() => setCategoryInUrl(sub._id)}
-              size="h-11 w-11"
             />
           ))}
         </div>
@@ -320,7 +328,6 @@ export default function ProductsGrid({ initialCategory, initialSearch }) {
                   ))}
             </select>
           )}
-
         </div>
 
         <div className="flex items-center gap-3">
