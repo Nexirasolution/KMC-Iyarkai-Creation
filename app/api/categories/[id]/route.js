@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { connectDB } from "@/lib/mongodb";
 import Category from "@/models/Category";
 import Product from "@/models/Product";
-import { deleteMediaFromCloudinary } from "@/lib/cloudinary";
+import { deleteMediaFromCloudinary } from "@/lib/r2";
 
 // Walks up from `startId`'s ancestor chain to check whether `targetId` appears in it.
 // Used to prevent a category from being nested under one of its own descendants.

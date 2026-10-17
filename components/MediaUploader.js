@@ -2,6 +2,7 @@
 
 import { useRef, useState } from "react";
 import Image from "next/image";
+import { compressImage } from "@/lib/compressImage";
 
 export default function MediaUploader({
   media = [],
@@ -11,11 +12,12 @@ export default function MediaUploader({
 }) {
   const inputRef = useRef(null);
   const [uploading, setUploading] = useState(false);
+  const [progress, setProgress] = useState("");
   const [error, setError] = useState("");
 
   async function handleFiles(e) {
-    const files = Array.from(e.target.files || []);
-    if (!files.length) return;
+    const picked = Array.from(e.target.files || []);
+    if (!picked.length) return;
 
     setUploading(true);
     setError("");
@@ -23,67 +25,46 @@ export default function MediaUploader({
     try {
       const uploaded = [];
 
-      for (const file of files) {
-        const mediaType = file.type.startsWith("video/") ? "video" : "image";
+      for (let i = 0; i < picked.length; i++) {
+        setProgress(`${i + 1}/${picked.length}`);
 
-        // 1. Ask our server for a signed upload (tiny JSON request, no size limit)
-        const sigRes = await fetch("/api/upload-signature", {
+        // 0. Compress images in the browser (videos pass through untouched)
+        const file = await compressImage(picked[i]);
+
+        // 1. Ask our server for a presigned R2 upload URL (tiny JSON request)
+        const sigRes = await fetch("/api/upload-url", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ folder }),
+          body: JSON.stringify({
+            folder,
+            contentType: file.type,
+            size: file.size,
+            filename: file.name,
+          }),
         });
 
-        const sigText = await sigRes.text();
-        let sigData;
-        try {
-          sigData = JSON.parse(sigText);
-        } catch {
-          throw new Error(
-            `Could not get upload permission (server said: "${sigText.slice(0, 100)}")`
-          );
-        }
+        const sigData = await sigRes.json().catch(() => ({}));
         if (!sigRes.ok) {
-          throw new Error(sigData.error || "Signature request failed");
+          throw new Error(sigData.error || "Could not get upload permission");
         }
 
-        const { signature, timestamp, apiKey, cloudName, folder: signedFolder } = sigData;
+        const { uploadUrl, key, url, mediaType } = sigData;
 
-        if (!apiKey || !cloudName) {
-          throw new Error("Cloudinary is not configured correctly on the server.");
-        }
-
-        // 2. Upload the file directly to Cloudinary from the browser
-        const cloudForm = new FormData();
-        cloudForm.append("file", file);
-        cloudForm.append("api_key", apiKey);
-        cloudForm.append("timestamp", timestamp);
-        cloudForm.append("signature", signature);
-        cloudForm.append("folder", signedFolder);
-
-        const uploadRes = await fetch(
-          `https://api.cloudinary.com/v1_1/${cloudName}/${mediaType}/upload`,
-          { method: "POST", body: cloudForm }
-        );
-
-        const uploadText = await uploadRes.text();
-        let uploadData;
-        try {
-          uploadData = JSON.parse(uploadText);
-        } catch {
-          throw new Error(
-            `Upload failed (Cloudinary said: "${uploadText.slice(0, 150)}")`
-          );
-        }
-
-        if (!uploadRes.ok) {
-          throw new Error(uploadData.error?.message || "Upload failed");
-        }
-
-        uploaded.push({
-          url: uploadData.secure_url,
-          publicId: uploadData.public_id,
-          mediaType,
+        // 2. PUT the file directly to R2. Headers must match what was signed.
+        const putRes = await fetch(uploadUrl, {
+          method: "PUT",
+          headers: {
+            "Content-Type": file.type,
+            "Cache-Control": "public, max-age=31536000, immutable",
+          },
+          body: file,
         });
+
+        if (!putRes.ok) {
+          throw new Error(`Upload to storage failed (${putRes.status})`);
+        }
+
+        uploaded.push({ url, publicId: key, mediaType });
       }
 
       onChange(multiple ? [...media, ...uploaded] : uploaded);
@@ -91,9 +72,8 @@ export default function MediaUploader({
       setError(err.message);
     } finally {
       setUploading(false);
-      if (inputRef.current) {
-        inputRef.current.value = "";
-      }
+      setProgress("");
+      if (inputRef.current) inputRef.current.value = "";
     }
   }
 
@@ -110,16 +90,13 @@ export default function MediaUploader({
             className="relative h-24 w-24 overflow-hidden rounded-lg border"
           >
             {item.mediaType === "video" ? (
-              <video
-                src={item.url}
-                className="h-full w-full object-cover"
-                controls
-              />
+              <video src={item.url} className="h-full w-full object-cover" controls />
             ) : item.url ? (
               <Image
                 src={item.url}
                 alt="Product image"
                 fill
+                unoptimized
                 className="object-cover"
               />
             ) : (
@@ -140,10 +117,11 @@ export default function MediaUploader({
 
         <button
           type="button"
+          disabled={uploading}
           onClick={() => inputRef.current?.click()}
-          className="flex h-24 w-24 items-center justify-center rounded-lg border border-dashed"
+          className="flex h-24 w-24 items-center justify-center rounded-lg border border-dashed text-sm"
         >
-          {uploading ? "Uploading..." : "+ Add"}
+          {uploading ? `Uploading ${progress}` : "+ Add"}
         </button>
       </div>
 

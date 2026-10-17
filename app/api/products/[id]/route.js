@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { connectDB } from "@/lib/mongodb";
 import Product from "@/models/Product";
 import "@/models/Category";
-import { deleteMediaFromCloudinary } from "@/lib/cloudinary";
+import { deleteMediaFromCloudinary } from "@/lib/r2";
 import { normalizeWeight } from "@/lib/weight";
 
 function normalizeMedia(media) {

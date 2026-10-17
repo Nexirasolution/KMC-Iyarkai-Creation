@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { connectDB } from "@/lib/mongodb";
 import Banner from "@/models/Banner";
-import { deleteMediaFromCloudinary } from "@/lib/cloudinary";
+import { deleteMediaFromCloudinary } from "@/lib/r2";
 
 export async function GET(req, { params }) {
   try {

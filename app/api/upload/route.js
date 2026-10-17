@@ -1,71 +1,29 @@
 import { NextResponse } from "next/server";
-import cloudinary from "@/lib/cloudinary";
+import { uploadToR2, mediaTypeOf, sanitizeFolder } from "@/lib/r2";
 
+// Legacy server-side upload (used by ImageUploader). Subject to your host's
+// request body limit (4.5 MB on Vercel). Prefer MediaUploader for large files.
 export async function POST(req) {
   try {
     const formData = await req.formData();
-
     const file = formData.get("file");
-    const folder = formData.get("folder") || "kmc-products";
+    const folder = sanitizeFolder(formData.get("folder"));
 
     if (!file) {
-      return NextResponse.json(
-        { error: "No file uploaded" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "No file uploaded" }, { status: 400 });
     }
 
-    // Auto detect file type
-    const mediaType = file.type.startsWith("video/")
-      ? "video"
-      : "image";
+    const mediaType = mediaTypeOf(file.type);
+    if (!mediaType) {
+      return NextResponse.json({ error: "Only images and videos are allowed" }, { status: 400 });
+    }
 
-    console.log("Uploading:", file.name);
-    console.log("Type:", mediaType);
-    console.log("Folder:", folder);
+    const buffer = Buffer.from(await file.arrayBuffer());
+    const result = await uploadToR2(buffer, folder, mediaType, file.type, file.name);
 
-
-    const bytes = await file.arrayBuffer();
-    const buffer = Buffer.from(bytes);
-
-
-    const uploadResult = await new Promise((resolve, reject) => {
-
-      cloudinary.uploader.upload_stream(
-        {
-          folder,
-          resource_type: mediaType,
-        },
-
-        (error, result) => {
-          if (error) {
-            reject(error);
-          } else {
-            resolve(result);
-          }
-        }
-
-      ).end(buffer);
-
-    });
-
-
-    return NextResponse.json({
-      success: true,
-      url: uploadResult.secure_url,
-      publicId: uploadResult.public_id,
-      mediaType,
-    });
-
-
+    return NextResponse.json({ success: true, ...result });
   } catch (error) {
-
     console.error("Upload error:", error);
-
-    return NextResponse.json(
-      { error: error.message || "Upload failed" },
-      { status: 500 }
-    );
-
+    return NextResponse.json({ error: error.message || "Upload failed" }, { status: 500 });
   }
 }
