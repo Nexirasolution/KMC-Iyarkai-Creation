@@ -136,15 +136,25 @@ export default function AdminCategoriesPage() {
     }
   }
 
-  async function handleDelete(id) {
-    if (!confirm("Delete this category?")) return;
-    const res = await fetch(`/api/categories/${id}`, { method: "DELETE" });
-    const data = await res.json();
-    if (!res.ok) {
-      alert(data.error);
-      return;
+  // Takes the whole category so we can warn about nested subcategories.
+  async function handleDelete(c) {
+    const kidCount = childrenOf(c._id).length;
+    const msg = kidCount
+      ? `Delete "${c.name}" and its ${kidCount} subcategor${kidCount === 1 ? "y" : "ies"} (including nested ones)?`
+      : `Delete "${c.name}"?`;
+    if (!confirm(msg)) return;
+
+    try {
+      const res = await fetch(`/api/categories/${c._id}`, { method: "DELETE" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        alert(data.error || "Failed to delete category.");
+        return;
+      }
+      loadData();
+    } catch {
+      alert("Network error while deleting.");
     }
-    loadData();
   }
 
   function toggleExpand(id) {
@@ -235,7 +245,7 @@ export default function AdminCategoriesPage() {
                 ✏️
               </button>
 
-              <button title="Delete" onClick={() => handleDelete(c._id)} className="text-red-600 hover:scale-110 transition">
+              <button title="Delete" onClick={() => handleDelete(c)} className="text-red-600 hover:scale-110 transition">
                 🗑️
               </button>
             </div>
